@@ -1,0 +1,202 @@
+from datetime import datetime, date
+from typing import Optional, List, Any, Union
+from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
+from decimal import Decimal, InvalidOperation
+import logging
+
+# Configuração para serialização JSON
+common_config = ConfigDict(
+    json_encoders={
+        datetime: lambda dt: dt.isoformat() if dt else None,
+        date: lambda d: d.isoformat() if d else None,
+        Decimal: lambda dec: str(dec) if dec is not None else None,
+    },
+    populate_by_name=True,
+    use_enum_values=True,
+)
+
+
+class Precatorio(BaseModel):
+    model_config = common_config
+
+    ordem: int = Field(..., ge=0)
+    processo: str = Field(..., min_length=1)
+    comarca: str = Field(default="-")
+    ano_orcamento: int
+    natureza: str = Field(default="-")
+    data_cadastro: Optional[datetime] = None
+    tipo_classificacao: str = Field(default="-")
+    valor_original: Decimal = Field(default=Decimal("0.0"))
+    valor_atual: Decimal = Field(default=Decimal("0.0"))
+    situacao: str = Field(default="-")
+
+    @field_validator("processo", mode="before")
+    @classmethod
+    def clean_processo(cls, v: Any) -> str:
+        if not v or not isinstance(v, str):
+            if isinstance(v, (int, float)):
+                return f"{v:.0f}"
+            raise ValueError("Processo deve ser uma string ou representação de string")
+
+        processed_v = "".join(c for c in v if c.isalnum() or c == "-" or c == ".")
+        if not processed_v.strip():
+            raise ValueError("Processo não pode ser vazio após limpeza")
+        return processed_v.strip()
+
+    @field_validator(
+        "comarca", "natureza", "tipo_classificacao", "situacao", mode="before"
+    )
+    @classmethod
+    def clean_optional_strings(cls, v: Any) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()) or v == "-":
+            return "-"
+        if not isinstance(v, str):
+            return str(v).strip()
+        return v.strip()
+
+    @field_validator("data_cadastro", mode="before")
+    @classmethod
+    def clean_data_cadastro(cls, v: Any) -> Optional[datetime]:
+        if v is None or (isinstance(v, str) and (v.strip() == "-" or not v.strip())):
+            return None
+
+        if isinstance(v, datetime):
+            return v
+        if isinstance(v, date):
+            return datetime.combine(v, datetime.min.time())
+
+        if isinstance(v, str):
+            if "datetime" in v.lower():
+                try:
+                    parts_str = v[
+                        v.lower().find("datetime(") + len("datetime(") : v.rfind(")")
+                    ]
+                    parts = [int(p.strip()) for p in parts_str.split(",")]
+                    return datetime(*parts)
+                except Exception:
+                    logger.warning(f"Falha ao parsear string 'datetime': {v}")
+                    return None
+            try:
+                return datetime.fromisoformat(v.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+            try:
+                if v.isdigit():
+                    num_v = float(v)
+                    if num_v > 253402300799:
+                        return datetime.fromtimestamp(num_v / 1000.0)
+                    return datetime.fromtimestamp(num_v)
+            except ValueError:
+                pass
+
+        if isinstance(v, (int, float)):
+            try:
+                if v > 253402300799:
+                    return datetime.fromtimestamp(v / 1000.0)
+                return datetime.fromtimestamp(v)
+            except Exception:
+                logger.warning(f"Falha ao converter timestamp numérico para data: {v}")
+                return None
+
+        logger.warning(f"Formato de data_cadastro não reconhecido: {v}")
+        return None
+
+    @field_validator("ano_orcamento", mode="before")
+    @classmethod
+    def validate_ano_orcamento(cls, v: Any) -> int:
+        current_year = datetime.now().year
+        default_ano = current_year
+
+        if v is None or (isinstance(v, str) and (v.strip() == "-" or not v.strip())):
+            return default_ano
+
+        if isinstance(v, str):
+            if not v.isdigit():
+                if len(v) > 8 and all(c.isdigit() for c in v):
+                    try:
+                        return datetime.fromtimestamp(int(v) / 1000.0).year
+                    except ValueError:
+                        return default_ano
+                return default_ano
+            try:
+                v_int = int(v)
+            except ValueError:
+                return default_ano
+        elif isinstance(v, (int, float)):
+            v_int = int(v)
+        else:
+            return default_ano
+
+        if v_int > 3000 and len(str(v_int)) > 8:
+            try:
+                return datetime.fromtimestamp(v_int / 1000.0).year
+            except ValueError:
+                pass
+
+        if 1900 <= v_int <= current_year + 5:
+            return v_int
+
+        logger.warning(
+            f"Ano do orçamento '{v_int}' fora do intervalo, usando default {default_ano}."
+        )
+        return default_ano
+
+    @field_validator("valor_original", "valor_atual", mode="before")
+    @classmethod
+    def clean_decimal_fields(cls, v: Any) -> Decimal:
+        if v is None or (isinstance(v, str) and (v.strip() == "-" or not v.strip())):
+            return Decimal("0.0")
+
+        if isinstance(v, str):
+            cleaned_v = v.replace("R$", "").strip()
+
+            num_dots = cleaned_v.count(".")
+            num_commas = cleaned_v.count(",")
+
+            if num_commas == 1 and num_dots > 1:  # Formato: 1.234.567,89
+                cleaned_v = cleaned_v.replace(".", "").replace(",", ".")
+            elif num_commas > 1 and num_dots == 1:  # Formato: 1,234,567.89 (americano)
+                cleaned_v = cleaned_v.replace(",", "")
+            elif num_commas == 1 and num_dots == 0:  # Formato: 1234,56
+                cleaned_v = cleaned_v.replace(",", ".")
+            elif (
+                num_dots == 1 and num_commas == 0 and len(cleaned_v.split(".")[-1]) == 3
+            ):  # Formato: 1.234 (milhares)
+                cleaned_v = cleaned_v.replace(".", "")
+            # Nenhum outro tratamento especial de ponto/vírgula, assume que está ok ou é simples.
+
+            try:
+                return Decimal(cleaned_v)
+            except InvalidOperation:
+                logger.warning(
+                    f"Não foi possível converter valor '{v}' para Decimal após limpeza. Usando 0.0."
+                )
+                return Decimal("0.0")
+
+        if isinstance(v, (int, float)):
+            return Decimal(str(v))  # Converte via string para precisão
+
+        logger.warning(
+            f"Tipo inesperado para valor Decimal: {type(v)}, valor: {v}. Usando 0.0."
+        )
+        return Decimal("0.0")
+
+
+class PrecatorioResponse(BaseModel):
+    model_config = common_config
+    status: str
+    message: str
+    data: Optional[List[Precatorio]] = None
+
+
+class EntidadeResponse(BaseModel):
+    model_config = common_config
+    status: str
+    message: str
+    data: Optional[List[str]] = None
+
+
+# Adicionar logger no escopo do módulo se não estiver globalmente disponível
+logger = logging.getLogger(__name__)
+# Configurar o logger se necessário (ex: logging.basicConfig(level=logging.INFO))
+# Se o logger já é configurado em outro lugar (ex: utils.logging_utils), esta parte pode não ser necessária aqui.

@@ -1,0 +1,25 @@
+*   Trying 127.0.0.1:5000...
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Connected to localhost (127.0.0.1) port 5000 (#0)
+> GET /api/fetch?entity=MUNICÍPIO%20DE%20FORTALEZA HTTP/1.1
+> Host: localhost:5000
+> User-Agent: curl/7.81.0
+> Accept: */*
+> 
+* Mark bundle as not supporting multiuse
+< HTTP/1.1 200 OK
+< Server: Werkzeug/3.0.4 Python/3.10.12
+< Date: Sun, 18 May 2025 16:45:00 GMT
+< Content-Type: application/json
+< Content-Length: 96
+< Connection: close
+< 
+{ [96 bytes data]
+100    96  100    96    0     0    158      0 --:--:-- --:--:-- --:--:--   158
+* Closing connection 0
+{
+    "status": "success",
+    "message": "Dados salvos em precatorios.csv",
+    "data": null
+}

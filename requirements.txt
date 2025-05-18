@@ -1,0 +1,11 @@
+flask==3.0.2
+requests==2.31.0
+python-dotenv==1.0.1
+pydantic==2.6.3
+tenacity==8.2.3
+flask-restx==1.3.0
+flask-caching==2.1.0
+flask-limiter==3.5.0
+flask-compress==1.14
+structlog==24.1.0
+prometheus-client==0.20.0 
