@@ -638,284 +638,341 @@ class PrecatoriosCrawler:
                     num_raw_rows=len(data_rows),
                 )
 
-                last_seen_row_schema = None
+                # last_seen_row_schema = None # Não mais necessário no escopo externo do loop de linhas
+                s_schema = None
+                last_processed_pydantic_row: Dict[str, Any] = {}
 
                 for i, raw_row_data_container in enumerate(data_rows):
                     current_c_values = raw_row_data_container.get("C", [])
-                    current_s_list_from_row = raw_row_data_container.get("S")
-                    rulifier_r = raw_row_data_container.get("R")  # Obter o Rulifier
+                    rulifier_r = raw_row_data_container.get("R")
 
-                    effective_s_list = None
-                    if (
-                        current_s_list_from_row
-                        and isinstance(current_s_list_from_row, list)
-                        and len(current_s_list_from_row) > 0
-                    ):
-                        last_seen_row_schema = current_s_list_from_row
-                        effective_s_list = current_s_list_from_row
-                        if i == 0 and page_index == 0:
-                            logger.info(
-                                "normalize_to_rows_primeira_linha_bruta_da_pagina_com_schema_S",
-                                raw_values=current_c_values,
-                                row_schema=effective_s_list,
-                                rulifier=rulifier_r,
-                            )
-                    elif last_seen_row_schema:
-                        effective_s_list = last_seen_row_schema
-                    else:
-                        logger.warning(
-                            f"Linha {i} (pág {page_index}): Sem schema S e nenhum anterior. Pulando."
-                        )
-                        continue
-
-                    if (
-                        not current_c_values
-                        and rulifier_r is not None
-                        and rulifier_r != 0
-                    ):  # C pode ser vazio se R indicar que nada mudou ou tudo é default.
-                        logger.info(
-                            f"Linha {i} (pág {page_index}): C está vazio, mas R={rulifier_r}. Assumindo todos defaults."
-                        )
-                        # pydantic_input_row já está com defaults, então podemos apenas tentar
-                        # validar/adicionar se necessário
-                        # No entanto, se R != 0, C não deveria estar vazio. Isso pode ser um caso estranho.
-                        # Por segurança, vamos pular se C está vazio e R sugere que deveria haver dados.
-                        # Se R for 0 (nenhum bit setado), C vazio é esperado.
-                        if rulifier_r == 0:
-                            # Se R é 0, todos os campos são default/não mudaram
-                            # (assumindo defaults preenchidos)
-                            # Tentamos criar um Precatorio a partir dos defaults puros.
-                            pydantic_input_row_defaults_only: Dict[str, Any] = {}
-                            for (
-                                csv_f_default,
-                                csv_attrs_default,
-                            ) in self.field_config_instance.field_mapping.items():
-                                pydantic_input_row_defaults_only[csv_f_default] = (
-                                    self._format_value(
-                                        csv_attrs_default.get("default"),
-                                        csv_attrs_default.get("type", "str"),
-                                    )
-                                )
-                            try:
-                                precatorio_obj = Precatorio(
-                                    **pydantic_input_row_defaults_only
-                                )
-                                normalized_rows.append(precatorio_obj.model_dump())
-                                # Inc RECORDS_PROCESSED etc.
-                            except ValidationError as e_def:
-                                logger.error(
-                                    "erro_validacao_pydantic_defaults_only_com_R_zero",
-                                    row_index_in_page=i,
-                                    pydantic_input=pydantic_input_row_defaults_only,
-                                    errors=e_def.errors(),
-                                )
-                            continue  # Próxima linha
-                        else:
-                            logger.warning(
-                                f"Linha {i} (pág {page_index}): C vazio, mas R={rulifier_r} != 0. "
-                                f"Pulando (inconsistente)."
-                            )
-                            continue
-                    elif not current_c_values:  # C vazio e R é None ou 0
-                        logger.info(
-                            f"Linha {i} (pág {page_index}): C vazio (R={rulifier_r}). Usando defaults."
-                        )
-                        pydantic_input_row_defaults_only_no_c: Dict[str, Any] = {}
-                        for (
-                            csv_f_no_c,
-                            csv_attrs_no_c,
-                        ) in self.field_config_instance.field_mapping.items():
-                            pydantic_input_row_defaults_only_no_c[csv_f_no_c] = (
-                                self._format_value(
-                                    csv_attrs_no_c.get("default"),
-                                    csv_attrs_no_c.get("type", "str"),
-                                )
-                            )
-                        try:
-                            precatorio_obj = Precatorio(
-                                **pydantic_input_row_defaults_only_no_c
-                            )
-                            normalized_rows.append(precatorio_obj.model_dump())
-                        except ValidationError as e_no_c:
+                    if i == 0:
+                        current_s_list_from_row = raw_row_data_container.get("S")
+                        if not current_s_list_from_row or not isinstance(
+                            current_s_list_from_row, list
+                        ):
                             logger.error(
-                                "erro_validacao_pydantic_defaults_only_sem_C",
-                                row_index_in_page=i,
-                                pydantic_input=pydantic_input_row_defaults_only_no_c,
-                                errors=e_no_c.errors(),
+                                f"Página {page_index}: Primeira linha (índice {i}) não contém schema 'S' válido. Pulando página."
                             )
-                        continue
-
-                    pydantic_input_row: Dict[str, Any] = {}
-                    for (
-                        csv_f,
-                        csv_attrs,
-                    ) in self.field_config_instance.field_mapping.items():
-                        pydantic_input_row[csv_f] = self._format_value(
-                            csv_attrs.get("default"), csv_attrs.get("type", "str")
+                            break  # Pula para a próxima página
+                        s_schema = current_s_list_from_row
+                        logger.info(
+                            "normalize_to_rows_schema_S_obtido_da_primeira_linha",
+                            page_index=page_index,
+                            row_index=i,
+                            schema_S=s_schema,
                         )
+                        if len(current_c_values) != len(s_schema):
+                            logger.error(
+                                f"Página {page_index}, Linha {i}: Comprimento de C ({len(current_c_values)}) "
+                                f"não corresponde ao schema S ({len(s_schema)}). Pulando linha."
+                            )
+                            # Limpar last_processed_pydantic_row para que a próxima linha (se houver) não a herde incorretamente.
+                            last_processed_pydantic_row = {}
+                            continue
 
-                    c_iterator = iter(current_c_values)
-                    processed_values_from_c = 0
-
-                    # Validar se effective_s_list e global_descriptor_selects têm o mesmo comprimento
-                    if len(effective_s_list) != len(global_descriptor_selects):
-                        logger.error(
-                            f"Linha {i} (pág {page_index}): Comprimento do schema S da linha ({len(effective_s_list)}) "
-                            f"não corresponde ao comprimento dos descritores globais ({len(global_descriptor_selects)}). "
-                            f"Pulando linha."
-                        )
-                        continue
-
-                    for col_idx_in_schema, schema_item_from_s in enumerate(
-                        effective_s_list
-                    ):
-                        is_present_in_c = False
-                        if rulifier_r is not None:
-                            if (rulifier_r >> col_idx_in_schema) & 1:
-                                is_present_in_c = True
-                        else:
-                            if col_idx_in_schema < len(current_c_values):
-                                is_present_in_c = True
-
-                        if is_present_in_c:
-                            try:
-                                raw_value_in_c = next(c_iterator)
-                                processed_values_from_c += 1
-                            except StopIteration:
-                                logger.error(
-                                    f"Linha {i} (pág {page_index}): R indicou col {col_idx_in_schema} "
-                                    f"em C, mas C ({len(current_c_values)}) esgotou. R={rulifier_r}. "
-                                    f"Erro grave na lógica ou dados da API. Pulando linha."
-                                )
-                                break  # Sai do loop de colunas para esta linha
-
-                            # Obter informações do descritor global correspondente pelo índice
-                            global_desc_item_for_this_col = global_descriptor_selects[
-                                col_idx_in_schema
-                            ]
-                            base_api_name = self._get_base_field_name(
-                                global_desc_item_for_this_col.get("Name")
+                        # Processar a primeira linha (linha base)
+                        pydantic_input_row: Dict[str, Any] = {}
+                        for (
+                            csv_f_init,
+                            csv_attrs_init,
+                        ) in self.field_config_instance.field_mapping.items():
+                            pydantic_input_row[csv_f_init] = self._format_value(
+                                csv_attrs_init.get("default"),
+                                csv_attrs_init.get("type", "str"),
                             )
 
-                            csv_field_info = api_name_to_csv_field_map.get(
-                                base_api_name
+                        for col_idx, schema_item in enumerate(s_schema):
+                            raw_value_for_field = current_c_values[col_idx]
+                            # Obter informações do descritor global e mapeamento CSV
+                            api_name_raw = global_descriptor_selects[col_idx].get(
+                                "Name"
                             )
-                            if not csv_field_info:
-                                logger.debug(
-                                    f"API_NAME '{base_api_name}' (col {col_idx_in_schema} de S/GlobalDesc) "
-                                    f"não mapeado para CSV. Pulando valor de C."
-                                )
+                            base_api_name = self._get_base_field_name(api_name_raw)
+                            csv_field_cfg = api_name_to_csv_field_map.get(base_api_name)
+
+                            if not csv_field_cfg:
                                 continue
 
-                            csv_field = csv_field_info["csv_field"]
-                            field_type = csv_field_info["type"]
+                            target_csv_field = csv_field_cfg["csv_field"]
+                            target_field_type = csv_field_cfg["type"]
+                            dict_name = schema_item.get("DN")
 
-                            original_value_from_api: Any = None
-                            value_resolved_for_formatting = False
+                            val_to_assign = None
+                            resolved_value = False
 
-                            # Usar DN do schema_item_from_s (da linha atual)
-                            dict_name_from_s_row = schema_item_from_s.get("DN")
-
-                            if dict_name_from_s_row:
+                            if dict_name:
                                 try:
-                                    actual_index = int(raw_value_in_c)
-                                    value_dict_list = value_dicts.get(
-                                        dict_name_from_s_row
-                                    )
-
-                                    logger.debug(
-                                        "value_dict_lookup",
-                                        csv_field=csv_field,
-                                        api_name=base_api_name,
-                                        dict_name=dict_name_from_s_row,
-                                        index_val_from_c=str(raw_value_in_c)[
-                                            :50
-                                        ],  # Log original de C (curto)
-                                        attempted_int_index=actual_index,
-                                        is_list=isinstance(value_dict_list, list),
-                                        list_len=(
-                                            len(value_dict_list)
-                                            if isinstance(value_dict_list, list)
-                                            else -1
-                                        ),
-                                    )
-
+                                    actual_idx = int(raw_value_for_field)
+                                    vd_list = value_dicts.get(dict_name)
                                     if isinstance(
-                                        value_dict_list, list
-                                    ) and 0 <= actual_index < len(value_dict_list):
-                                        original_value_from_api = value_dict_list[
-                                            actual_index
-                                        ]
-                                        value_resolved_for_formatting = True
+                                        vd_list, list
+                                    ) and 0 <= actual_idx < len(vd_list):
+                                        val_to_assign = vd_list[actual_idx]
+                                        resolved_value = True
                                     else:
+                                        len_info = (
+                                            len(vd_list)
+                                            if isinstance(vd_list, list)
+                                            else "N/A"
+                                        )
                                         logger.warning(
-                                            f"Índice {actual_index} (de C '{str(raw_value_in_c)[:50]}') para VD '{dict_name_from_s_row}' "
-                                            f"(campo {csv_field}, API {base_api_name}) inv_bounds "
-                                            f"(len: {len(value_dict_list) if isinstance(value_dict_list, list) else 'N/A'}). "
-                                            f"Usando default para '{csv_field}'."
+                                            "Índice %s (de C '%s') para VD '%s' (campo %s, API %s, linha %s, pág %s). "
+                                            "Inv_bounds (len: %s). Usando default para '%s'.",
+                                            actual_idx,
+                                            str(raw_value_for_field)[:50],
+                                            dict_name,
+                                            target_csv_field,
+                                            base_api_name,
+                                            i,
+                                            page_index,
+                                            len_info,
+                                            target_csv_field,
                                         )
                                 except (ValueError, TypeError):
-                                    logger.error(
-                                        f"Valor '{str(raw_value_in_c)[:50]}' de C para campo DN '{csv_field}' (DN: {dict_name_from_s_row}) "
-                                        f"não é índice int válido. Usando default para '{csv_field}'."
+                                    logger.warning(
+                                        "Valor '%s' de C para campo DN '%s' (DN: %s, linha %s, pág %s) não é índice int. "
+                                        "Usando default para '%s'.",
+                                        str(raw_value_for_field)[:50],
+                                        target_csv_field,
+                                        dict_name,
+                                        i,
+                                        page_index,
+                                        target_csv_field,
                                     )
-                            else:  # Sem DN no schema S da linha para esta coluna
-                                original_value_from_api = raw_value_in_c
-                                value_resolved_for_formatting = True
+                            else:  # No DN
+                                val_to_assign = raw_value_for_field
+                                resolved_value = True
 
-                            if value_resolved_for_formatting:
-                                decoded_value = (
-                                    self._decode_utf8(str(original_value_from_api))
-                                    if original_value_from_api is not None
+                            if resolved_value:
+                                decoded = (
+                                    self._decode_utf8(str(val_to_assign))
+                                    if val_to_assign is not None
                                     else None
                                 )
-                                formatted_for_pydantic = self._format_value(
-                                    decoded_value, field_type
+                                pydantic_input_row[target_csv_field] = (
+                                    self._format_value(decoded, target_field_type)
                                 )
-                                pydantic_input_row[csv_field] = formatted_for_pydantic
-                            # else: o default pré-preenchido em pydantic_input_row é usado.
 
-                        # Fim do if is_present_in_c:
-                    # Fim do loop de colunas
+                        last_processed_pydantic_row = pydantic_input_row.copy()
 
-                    if (
-                        processed_values_from_c != len(current_c_values)
-                        and rulifier_r is not None
-                    ):
-                        # Este log agora só dispara se R foi fornecido e houve uma contagem diferente.
-                        # Se R não for fornecido, processed_values_from_c pode ser < len(current_c_values)
-                        # se effective_s_list for mais curto que C, o que é permitido (C pode ter dados extras).
-                        # A validação importante é se R indica X itens e consumimos X itens.
-                        # A verificação if col_idx_in_schema < len(current_c_values) no modo sem R é um fallback.
-                        # No entanto, a contagem de processed_values_from_c se baseia em R.
-                        # Se R diz para pegar 5 itens, e C tem 10, processed_values_from_c será 5.
-                        # O warning original era: processed_values_from_c != len(current_c_values)
-                        # Isso ainda pode ser útil para detectar se C tem mais dados do que R indica.
-                        # Mas não é necessariamente um erro se R foi respeitado.
-                        # Vamos refinar o log para focar se o número de itens consumidos (baseado em R)
-                        # difere do número de bits setados em R.
-                        num_bits_set_in_r = (
-                            bin(rulifier_r).count("1")
-                            if rulifier_r is not None
-                            else len(effective_s_list)
-                        )
+                    else:  # Linhas delta (i > 0)
                         if (
-                            processed_values_from_c != num_bits_set_in_r
-                            and rulifier_r is not None
-                        ):
-                            logger.warning(
-                                f"Linha {i} (pág {page_index}): Consumidos de C ({processed_values_from_c}) "
-                                f"!= bits em R ({num_bits_set_in_r}). R={rulifier_r}. "
-                                f"Verificar API ou lógica de iteração de C."
+                            not s_schema
+                        ):  # Schema S não foi definido pela primeira linha da página
+                            logger.error(
+                                f"Página {page_index}, Linha {i}: Schema S não disponível. Pulando linha."
                             )
-                        elif (
-                            rulifier_r is None
-                            and processed_values_from_c < len(effective_s_list)
-                            and processed_values_from_c < len(current_c_values)
-                        ):
-                            # Modo sem R, e C tinha mais dados do que S e consumimos menos que C.
-                            pass  # Comportamento esperado, C pode ser maior.
+                            continue
+                        if (
+                            not last_processed_pydantic_row
+                        ):  # Linha base não foi processada com sucesso
+                            logger.error(
+                                f"Página {page_index}, Linha {i}: Linha base anterior não processada. Pulando linha delta."
+                            )
+                            continue
 
+                        pydantic_input_row = (
+                            last_processed_pydantic_row.copy()
+                        )  # Herda da anterior
+
+                        if rulifier_r is None:
+                            logger.warning(
+                                f"Página {page_index}, Linha {i}: Linha delta sem Rulifier R. "
+                                f"Os valores em C ({current_c_values}) podem estar incompletos ou não serem deltas. "
+                                "Tratando como se não houvesse mudanças em relação à linha anterior para esta linha."
+                            )
+                            # Se C está vazio e R é None, pydantic_input_row (cópia da anterior) é efetivamente usada.
+                            # Se C não está vazio mas R é None, a interpretação é ambígua.
+                            # A API Power BI geralmente fornece R se C for um delta.
+                            # Se C for de tamanho completo e R for None, é uma linha completa não delta.
+                            if len(current_c_values) == len(
+                                s_schema
+                            ):  # C completo, sem R, após a primeira linha
+                                logger.info(
+                                    f"Página {page_index}, Linha {i}: Detectada linha completa (C do mesmo tamanho do schema S) sem R após a primeira. Processando como linha base."
+                                )
+                                # Reset pydantic_input_row para defaults e preenche tudo de current_c_values
+                                temp_base_row: Dict[str, Any] = {}
+                                for (
+                                    csv_f_init,
+                                    csv_attrs_init,
+                                ) in self.field_config_instance.field_mapping.items():
+                                    temp_base_row[csv_f_init] = self._format_value(
+                                        csv_attrs_init.get("default"),
+                                        csv_attrs_init.get("type", "str"),
+                                    )
+                                for col_idx, schema_item in enumerate(s_schema):
+                                    raw_value_for_field = current_c_values[col_idx]
+                                    api_name_raw = global_descriptor_selects[
+                                        col_idx
+                                    ].get("Name")
+                                    base_api_name = self._get_base_field_name(
+                                        api_name_raw
+                                    )
+                                    csv_field_cfg = api_name_to_csv_field_map.get(
+                                        base_api_name
+                                    )
+                                    if not csv_field_cfg:
+                                        continue
+                                    target_csv_field = csv_field_cfg["csv_field"]
+                                    target_field_type = csv_field_cfg["type"]
+                                    dict_name = schema_item.get("DN")
+                                    val_to_assign = None
+                                    resolved_value = False
+                                    if dict_name:
+                                        try:
+                                            actual_idx = int(raw_value_for_field)
+                                            vd_list = value_dicts.get(dict_name)
+                                            if isinstance(
+                                                vd_list, list
+                                            ) and 0 <= actual_idx < len(vd_list):
+                                                val_to_assign = vd_list[actual_idx]
+                                                resolved_value = True
+                                            else:
+                                                logger.warning(
+                                                    "Idx %s para VD %s (campo %s) fora dos bounds (linha %s, pág %s). Default.",
+                                                    actual_idx,
+                                                    dict_name,
+                                                    target_csv_field,
+                                                    i,
+                                                    page_index,
+                                                )
+                                        except (ValueError, TypeError):
+                                            logger.warning(
+                                                "Valor C %s para VD %s (campo %s) não é int (linha %s, pág %s). Default.",
+                                                str(raw_value_for_field)[:20],
+                                                dict_name,
+                                                target_csv_field,
+                                                i,
+                                                page_index,
+                                            )
+                                    else:
+                                        val_to_assign = raw_value_for_field
+                                        resolved_value = True
+                                    if resolved_value:
+                                        decoded = (
+                                            self._decode_utf8(str(val_to_assign))
+                                            if val_to_assign is not None
+                                            else None
+                                        )
+                                        temp_base_row[target_csv_field] = (
+                                            self._format_value(
+                                                decoded, target_field_type
+                                            )
+                                        )
+                                pydantic_input_row = temp_base_row  # Substitui a herdada pela processada como base
+                            # else: R é None, C é parcial -> comportamento indefinido, a linha herdada é mantida.
+
+                        else:  # Rulifier R está presente
+                            delta_iterator = iter(current_c_values)
+                            for col_idx, schema_item in enumerate(s_schema):
+                                if (rulifier_r >> col_idx) & 1:  # Este campo mudou
+                                    try:
+                                        new_raw_val_for_field = next(delta_iterator)
+                                    except StopIteration:
+                                        logger.error(
+                                            f"Página {page_index}, Linha {i}: Rulifier R indicou valor em C para col {col_idx}, mas C (delta) esgotou."
+                                        )
+                                        break  # Para de processar deltas para esta linha
+
+                                    api_name_raw = global_descriptor_selects[
+                                        col_idx
+                                    ].get("Name")
+                                    base_api_name = self._get_base_field_name(
+                                        api_name_raw
+                                    )
+                                    csv_field_cfg = api_name_to_csv_field_map.get(
+                                        base_api_name
+                                    )
+
+                                    if not csv_field_cfg:
+                                        continue
+
+                                    target_csv_field = csv_field_cfg["csv_field"]
+                                    target_field_type = csv_field_cfg["type"]
+                                    dict_name = schema_item.get("DN")
+                                    val_to_assign = None
+                                    resolved_value = False
+
+                                    if dict_name:
+                                        try:
+                                            actual_idx = int(new_raw_val_for_field)
+                                            vd_list = value_dicts.get(dict_name)
+                                            if isinstance(
+                                                vd_list, list
+                                            ) and 0 <= actual_idx < len(vd_list):
+                                                val_to_assign = vd_list[actual_idx]
+                                                resolved_value = True
+                                            else:
+                                                len_info = (
+                                                    len(vd_list)
+                                                    if isinstance(vd_list, list)
+                                                    else "N/A"
+                                                )
+                                                logger.warning(
+                                                    "Índice %s (de C-delta '%s') para VD '%s' (campo %s, API %s, linha %s, pág %s). "
+                                                    "Inv_bounds (len: %s). Usando default para este campo delta.",
+                                                    actual_idx,
+                                                    str(new_raw_val_for_field)[:50],
+                                                    dict_name,
+                                                    target_csv_field,
+                                                    base_api_name,
+                                                    i,
+                                                    page_index,
+                                                    len_info,
+                                                )
+                                                # Se o valor delta falha no lookup, o campo na pydantic_input_row
+                                                # (que veio da linha anterior) NÃO é alterado para default global,
+                                                # mas sim o valor da linha anterior é mantido para este campo.
+                                                # Se quisermos resetar para default global:
+                                                # pydantic_input_row[target_csv_field] = self._format_value(csv_field_cfg["default"], target_field_type)
+                                                # Por enquanto, a falha no delta significa que o valor herdado não muda.
+                                                # Para forçar o default do campo se o delta for inválido:
+                                                pydantic_input_row[target_csv_field] = (
+                                                    self._format_value(
+                                                        csv_field_cfg.get("default"),
+                                                        target_field_type,
+                                                    )
+                                                )
+
+                                        except (ValueError, TypeError):
+                                            logger.warning(
+                                                "Valor C-delta '%s' para campo DN '%s' (DN: %s, linha %s, pág %s) não é índice int. "
+                                                "Usando default para este campo delta.",
+                                                str(new_raw_val_for_field)[:50],
+                                                target_csv_field,
+                                                dict_name,
+                                                i,
+                                                page_index,
+                                            )
+                                            pydantic_input_row[target_csv_field] = (
+                                                self._format_value(
+                                                    csv_field_cfg.get("default"),
+                                                    target_field_type,
+                                                )
+                                            )
+                                    else:  # No DN
+                                        val_to_assign = new_raw_val_for_field
+                                        resolved_value = True
+
+                                    if (
+                                        resolved_value
+                                    ):  # Só atualiza se o valor delta foi resolvido (direto ou via VD)
+                                        decoded = (
+                                            self._decode_utf8(str(val_to_assign))
+                                            if val_to_assign is not None
+                                            else None
+                                        )
+                                        pydantic_input_row[target_csv_field] = (
+                                            self._format_value(
+                                                decoded, target_field_type
+                                            )
+                                        )
+
+                        last_processed_pydantic_row = pydantic_input_row.copy()
+
+                    # Após processar a linha (seja base ou delta), validar e adicionar
                     logger.debug(
                         "pydantic_input_pre_validation",
                         row_index_in_page=i,
@@ -923,7 +980,7 @@ class PrecatoriosCrawler:
                         input_data=pydantic_input_row,
                         rulifier_R=rulifier_r,
                         values_C=current_c_values,
-                        schema_S_effective=effective_s_list,
+                        schema_S_effective=s_schema,
                     )
 
                     try:
