@@ -13,7 +13,7 @@ from urllib.parse import unquote, urlencode
 from typing import List, Dict, Any
 
 from crawler import PrecatoriosCrawler
-from config_new import config
+from config import config
 from logger import configure_logging, get_logger
 from models import PrecatorioResponse, EntidadeResponse
 from metrics import track_time
@@ -192,6 +192,7 @@ class PrecatoriosResource(Resource):
             "valor_max": "Valor máximo",
             "natureza": "Natureza do precatório",
             "output": "Nome do arquivo CSV para salvar os dados",
+            "count": "Número de registros para buscar da API PowerBI (default: crawler decide)",
         }
     )
     @api.response(200, "Success", response_model)
@@ -221,6 +222,9 @@ class PrecatoriosResource(Resource):
             # Converte para o formato esperado pela API do TJCE
             api_entity = get_api_entity_name(entity_slug)
 
+            # Definir o logger aqui para que esteja disponível para os blocos try/except abaixo
+            logger = get_logger(__name__).bind(entity_slug=entity_slug)
+
             # Parâmetros de paginação
             try:
                 page = int(request.args.get("page", 1))
@@ -239,15 +243,38 @@ class PrecatoriosResource(Resource):
                     400,
                 )
 
+            # Novo parâmetro para contagem de registros
+            try:
+                requested_count_str = request.args.get("count")
+                requested_count = (
+                    int(requested_count_str)
+                    if requested_count_str is not None and requested_count_str.isdigit()
+                    else None
+                )
+                if requested_count is not None and requested_count < 1:
+                    logger.warning(
+                        "contagem_invalida_ignorado", count_fornecido=requested_count
+                    )
+                    requested_count = None  # Ignora se for < 1, deixa o crawler decidir
+            except (
+                ValueError
+            ):  # Em caso de falha na conversão para int, não não numérico.
+                logger.warning(
+                    "contagem_nao_numerica_ignorado",
+                    count_fornecido=request.args.get("count"),
+                )
+                requested_count = None
+
             output = request.args.get("output", "precatorios.csv")
 
-            logger = get_logger(__name__).bind(
-                entity_slug=entity_slug, page=page, per_page=per_page
+            # Atualiza o logger com todos os parâmetros finais
+            logger = logger.bind(
+                page=page, per_page=per_page, requested_count=requested_count
             )
             logger.info("iniciando_busca")
 
-            # Busca os dados usando o nome formatado para a API do TJCE
-            raw_data = crawler.fetch_data(api_entity)
+            # Busca os dados usando o nome formatado para a API do TJCE e o count solicitado
+            raw_data = crawler.fetch_data(entity=api_entity, count=requested_count)
             if not raw_data:
                 logger.warning("nenhum_dado_encontrado")
                 return PrecatorioResponse(
@@ -291,7 +318,7 @@ class PrecatoriosResource(Resource):
             paginated_rows = sorted_rows[start:end]
 
             # Salva os dados em arquivo se necessário
-            if output and output != "precatorios.csv":
+            if output:
                 try:
                     crawler.write_csv(rows, output)
                     logger.info("dados_salvos", output=output)
@@ -312,17 +339,16 @@ class PrecatoriosResource(Resource):
             )
 
             # Retorna os dados na resposta
+            response_message = f"Encontrados {total} registros"
+            if output and output != "precatorios.csv":
+                response_message += f", salvos em {output}"
+            else:
+                pass  # A mensagem já está boa.
+
             return PrecatorioResponse(
                 status="success",
-                message=(
-                    f"Encontrados {total} registros"
-                    + (
-                        f", salvos em {output}"
-                        if output and output != "precatorios.csv"
-                        else ""
-                    )
-                ),
-                data=paginated_rows,
+                message=response_message,
+                data=None,  # Alterado: Não retorna a lista de precatórios no JSON
             ).dict()
 
         except Exception as e:
@@ -372,20 +398,23 @@ class EntidadesResource(Resource):
                     writer.writeheader()
                     writer.writerows(entity_mappings)
 
-            return {
-                "status": "success",
-                "message": f"Encontradas {len(entity_mappings)} entidades"
+            return EntidadeResponse(
+                status="success",
+                message=f"Encontradas {len(entity_mappings)} entidades"
                 + (f", salvas em {output}" if output else ""),
-                "data": entity_mappings,
-            }
+                data=entity_mappings,
+            ).dict()
 
         except Exception as e:
             logger.error("erro_busca_entidades", error=str(e), exc_info=True)
-            return {
-                "status": "error",
-                "message": str(e),
-                "data": None,
-            }, 500
+            return (
+                EntidadeResponse(
+                    status="error",
+                    message=str(e),
+                    data=None,
+                ).dict(),
+                500,
+            )
 
 
 def cli():

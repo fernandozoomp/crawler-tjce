@@ -69,12 +69,12 @@ class Precatorio(BaseModel):
             if "datetime" in v.lower():
                 try:
                     parts_str = v[
-                        v.lower().find("datetime(") + len("datetime(") : v.rfind(")")
+                        v.lower().find("datetime(") + len("datetime("): v.rfind(")")
                     ]
                     parts = [int(p.strip()) for p in parts_str.split(",")]
                     return datetime(*parts)
-                except Exception:
-                    logger.warning(f"Falha ao parsear string 'datetime': {v}")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Falha ao parsear string 'datetime' '{v}': {e}")
                     return None
             try:
                 return datetime.fromisoformat(v.replace("Z", "+00:00"))
@@ -144,6 +144,9 @@ class Precatorio(BaseModel):
     @field_validator("valor_original", "valor_atual", mode="before")
     @classmethod
     def clean_decimal_fields(cls, v: Any) -> Decimal:
+        if isinstance(v, Decimal):
+            return v
+
         if v is None or (isinstance(v, str) and (v.strip() == "-" or not v.strip())):
             return Decimal("0.0")
 
@@ -176,6 +179,7 @@ class Precatorio(BaseModel):
         if isinstance(v, (int, float)):
             return Decimal(str(v))  # Converte via string para precisão
 
+        # Se chegou aqui e não é Decimal, str, int, float, ou None/string vazia, então é um tipo inesperado.
         logger.warning(
             f"Tipo inesperado para valor Decimal: {type(v)}, valor: {v}. Usando 0.0."
         )
