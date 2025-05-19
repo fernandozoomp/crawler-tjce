@@ -10,6 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 from tenacity import retry, stop_after_attempt, wait_exponential
 import re
 from copy import deepcopy
+from io import StringIO
+from decimal import Decimal, InvalidOperation
+import urllib.parse
 
 import requests
 from pydantic import ValidationError
@@ -18,6 +21,7 @@ from config import config, field_config as field_cfg, PAYLOAD_STRUCTURE
 from logger import get_logger
 from models import Precatorio
 from metrics import REQUESTS_TOTAL, RECORDS_PROCESSED, track_time
+from entity_mapping import get_api_entity_name
 
 logger = get_logger(__name__)
 
@@ -352,140 +356,139 @@ class PrecatoriosCrawler:
         response.raise_for_status()
 
         response_json = response.json()
-        logger.info(
-            "Resposta JSON completa da API:",
-            content_length=len(response.content),
-            json_data=response_json,
-        )
-
         return response_json
 
-    def fetch_data(self, entity: str, count: Optional[int] = None) -> List[Dict]:
+    def fetch_data(self, entity_slug_or_official_name: str, count: Optional[int] = None, page: int = 0) -> Optional[Dict[str, Any]]:
         """
-        Busca e normaliza os dados de precatórios para uma entidade específica.
-        Opcionalmente limita o número de registros com o parâmetro 'count'.
+        Busca os dados brutos da API do TJCE para uma entidade específica.
+        Agora aceita tanto o slug quanto o nome oficial, mas converterá para nome oficial.
         """
-        logger.info(
-            f"Iniciando busca de dados para a entidade: {entity}, count: {count}"
-        )
-        all_pages_data = []
-        # Se 'count' for especificado, a paginação com restart_tokens pode precisar de ajustes
-        # ou ser desabilitada/simplificada, pois queremos um número fixo de registros.
-        # A implementação atual de _fetch_page já recebe 'count'.
-        # A lógica de loop com restart_tokens aqui em fetch_data pode precisar ser condicional.
+        # Converte o slug para o nome da entidade esperado pela API
+        official_entity_name = get_api_entity_name(entity_slug_or_official_name)
+        logger.info(f"Buscando dados para entidade oficial: '{official_entity_name}' (slug original: '{entity_slug_or_official_name}'), página: {page}, count: {count}")
 
-        # Se count for especificado, faremos apenas uma chamada.
-        # A paginação real para buscar 'count' registros se eles excederem o limite da página da API
-        # não está totalmente implementada aqui. _fetch_page buscará até 'count' na primeira consulta.
+        restart_tokens: Optional[str] = None # Inicializa restart_tokens
+
+        # Cria uma cópia profunda do payload base para evitar modificações acidentais
+        payload = deepcopy(PAYLOAD_STRUCTURE)
+
+        # Modifica o payload para a entidade específica
+        # Acessa a lista de Conditions dentro do Where (assumindo que sempre existe)
+        # O payload original usa 'MUNICÍPIO DE FORTALEZA'
+        # Precisamos substituir isso pela official_entity_name correta
+        try:
+            payload["queries"][0]["Query"]["Commands"][0]["SemanticQueryDataShapeCommand"]["Query"]["Where"][0]["Condition"]["In"]["Values"][0][0]["Literal"]["Value"] = f"'{official_entity_name}'"
+        except (KeyError, IndexError) as e:
+            logger.error(f"Erro ao tentar modificar o payload para a entidade '{official_entity_name}'. Estrutura do PAYLOAD_STRUCTURE pode estar incorreta ou inesperada. Detalhes: {e}", payload_structure=PAYLOAD_STRUCTURE)
+            raise PayloadModificationError(f"Não foi possível definir a entidade no payload da requisição: {e}")
+
+        # Modifica o payload para incluir o 'count' se fornecido
         if count is not None:
-            page_data = self._fetch_page(
-                entity=entity, restart_tokens=None, count=count
-            )
-            if page_data:
-                all_pages_data.append(page_data)
-        else:
-            # Lógica de paginação original quando 'count' não é especificado
-            restart_tokens = None
-            max_pages = 100  # Limite de segurança para evitar loops infinitos
-            pages_fetched = 0
-            while pages_fetched < max_pages:
-                page_data = self._fetch_page(
-                    entity=entity, restart_tokens=restart_tokens
+            try:
+                # Ajusta o Count para o número de registros desejado
+                payload["queries"][0]["Query"]["Commands"][0][
+                    "SemanticQueryDataShapeCommand"
+                ]["Binding"]["DataReduction"]["Primary"]["Window"]["Count"] = count
+
+                # Ajusta o DataVolume. Se count for pequeno, podemos usar count.
+                # Para counts maiores, o DataVolume original (ex: 30) ou count pode ser usado.
+                # Vamos usar count aqui para simplificar, assumindo que a API lida bem.
+                # Se isso causar problemas (ex: menos registros que 'count' retornados),
+                # pode ser necessário manter DataVolume maior ou igual a Count.
+                # No nosso teste com 1 registro, DataVolume:3 e Count:1 funcionou.
+                # A estrutura original do PAYLOAD_STRUCTURE já tem DataVolume, podemos mantê-lo ou ajustá-lo.
+                # Por agora, vamos ajustar apenas o Window.Count que é o mais direto para o limite.
+                # Se count=1, idealmente DataVolume deve ser um pouco maior como 3, conforme descoberto.
+                # Vamos generalizar isso: se count for pequeno, aumentar DataVolume.
+                # Para um controle mais fino, essa lógica pode ser expandida.
+                # Por enquanto, focaremos no Window.Count.
+                # A estrutura do PAYLOAD_STRUCTURE já tem um DataReduction.DataVolume.
+                # Vamos também ajustar o DataReduction.DataVolume e o DataReduction.Primary.Count (se existir).
+
+                primary_binding = payload["queries"][0]["Query"]["Commands"][0][
+                    "SemanticQueryDataShapeCommand"
+                ]["Binding"]
+
+                if "DataReduction" in primary_binding:
+                    if "DataVolume" in primary_binding["DataReduction"]:
+                        # Se count for 1, mantemos DataVolume 3. Caso contrário, pode ser count ou um valor maior.
+                        # A estrutura padrão tem 30. Vamos usar count, mas no mínimo 3.
+                        primary_binding["DataReduction"]["DataVolume"] = (
+                            max(count, 3) if count > 0 else 30
+                        )
+
+                    if (
+                        "Primary" in primary_binding["DataReduction"]
+                        and "Count" in primary_binding["DataReduction"]["Primary"]
+                    ):
+                        # Este 'Count' (não o Window.Count) às vezes é usado como um limite geral.
+                        primary_binding["DataReduction"]["Primary"]["Count"] = count
+
+                logger.info(f"Payload modificado para buscar {count} registros.")
+
+            except (KeyError, IndexError) as e:
+                logger.error(
+                    f"Erro ao tentar modificar o payload para o count: {e}. Usando payload padrão."
                 )
-                if not page_data:
-                    logger.info(
-                        f"Não há mais dados para buscar para a entidade {entity} ou erro na busca."
-                    )
-                    break
+                # payload permanece como a cópia do PAYLOAD_STRUCTURE original
 
-                all_pages_data.append(page_data)
-                pages_fetched += 1
-
-                # Extrair restart_tokens para a próxima página
-                # A estrutura exata para encontrar RestartTokens pode variar.
-                # Baseado na estrutura anterior do payload:
-                try:
-                    # Tentativa de encontrar RestartTokens na estrutura comum
-                    # Isso precisa ser robusto e verificado contra a resposta real da API
-                    data_window = (
-                        page_data.get("results", [{}])[0]
-                        .get("result", {})
-                        .get("data", {})
-                        .get("dsr", {})
-                        .get("DS", [{}])[0]
-                        .get("ValueDicts", {})
-                        .get("D0", [{}])[0]
-                        .get("RestartTokens")
-                    )
-                    if data_window:  # Se D0 existir e tiver RestartTokens
-                        restart_tokens = (
-                            data_window[0]
-                            if isinstance(data_window, list) and data_window
-                            else None
-                        )
-                    else:  # Tentar outra estrutura comum se a primeira falhar
-                        data_window = (
-                            page_data.get("results", [{}])[0]
-                            .get("result", {})
-                            .get("data", {})
-                            .get("dsr", {})
-                            .get("DataWindows", [{}])[0]
-                            .get("RestartTokens")
-                        )
-                        if data_window:
-                            restart_tokens = (
-                                data_window[0]
-                                if isinstance(data_window, list) and data_window
-                                else None
-                            )
-                        else:
-                            restart_tokens = None
-
-                    if restart_tokens:
-                        logger.info(
-                            f"Próximos RestartTokens encontrados para {entity}: {restart_tokens}"
-                        )
-                    else:
-                        logger.info(
-                            f"Não foram encontrados RestartTokens para {entity}, fim da paginação."
-                        )
-                        break
-                except (IndexError, KeyError, TypeError) as e:
-                    logger.warning(
-                        f"Não foi possível extrair RestartTokens para {entity}: {e}. Interrompendo paginação."
-                    )
-                    restart_tokens = None  # Garantir que saia do loop
-                    break
-
-                if not restart_tokens:
-                    logger.info(
-                        f"Fim da paginação para entidade {entity} (sem RestartTokens)."
-                    )
-                    break
-
-            if pages_fetched >= max_pages:
+        # Lógica original para restart_tokens e paginação
+        if restart_tokens:
+            # Esta seção pode precisar de ajuste se a estrutura de RestartTokens não for sob "Window"
+            # no PAYLOAD_STRUCTURE quando buscamos múltiplos registros.
+            # Por enquanto, vamos assumir que a estrutura original do PAYLOAD_STRUCTURE em config.py
+            # (para múltiplos registros) tenha DataReduction.Primary.Window.
+            if (
+                "Window"
+                in payload["queries"][0]["Query"]["Commands"][0][
+                    "SemanticQueryDataShapeCommand"
+                ]["Binding"]["DataReduction"]["Primary"]
+            ):
+                payload["queries"][0]["Query"]["Commands"][0][
+                    "SemanticQueryDataShapeCommand"
+                ]["Binding"]["DataReduction"]["Primary"]["Window"]["RestartTokens"] = [
+                    restart_tokens
+                ]
+                payload["queries"][0]["Query"]["Commands"][0][
+                    "SemanticQueryDataShapeCommand"
+                ]["Query"]["OrderBy"][0][
+                    "Direction"
+                ] = 2  # Ordem descendente para próxima página
+            else:
                 logger.warning(
-                    f"Atingido o número máximo de páginas ({max_pages}) para {entity}."
+                    "Estrutura de paginacao (Window) nao encontrada no PAYLOAD_STRUCTURE "
+                    "ao tentar aplicar restart_tokens."
                 )
+        else:
+            # Para a primeira página, garantir a direção correta da ordenação (se houver)
+            if payload["queries"][0]["Query"]["Commands"][0][
+                "SemanticQueryDataShapeCommand"
+            ]["Query"].get("OrderBy"):
+                payload["queries"][0]["Query"]["Commands"][0][
+                    "SemanticQueryDataShapeCommand"
+                ]["Query"]["OrderBy"][0][
+                    "Direction"
+                ] = 1  # Ordem ascendente para primeira página
 
-        if not all_pages_data or not all_pages_data[0]:
-            logger.warning(
-                f"Nenhuma página de dados foi baixada para a entidade: {entity}"
-            )
-            return []
+        # Atualiza o nome da entidade na cláusula Where
+        payload["queries"][0]["Query"]["Commands"][0]["SemanticQueryDataShapeCommand"][
+            "Query"
+        ]["Where"][0]["Condition"]["In"]["Values"][0][0]["Literal"][
+            "Value"
+        ] = f"'{official_entity_name}'"
 
+        REQUESTS_TOTAL.labels(entity=official_entity_name).inc()
         logger.info(
-            "fetch_complete",
-            total_pages=len(all_pages_data),
-            total_records=sum(
-                len(
-                    page["results"][0]["result"]["data"]["dsr"]["DS"][0]["PH"][0]["DM0"]
-                )
-                for page in all_pages_data
-            ),
+            "Efetuando requisição para API Power BI",
+            payload_binding_details=payload["queries"][0]["Query"]["Commands"][0][
+                "SemanticQueryDataShapeCommand"
+            ]["Binding"],
         )
+        response = self.session.post(self.api_url, json=payload, timeout=30)
+        response.raise_for_status()
 
-        return all_pages_data
+        response_json = response.json()
+        return response_json
 
     def _get_base_field_name(self, api_name_str: str) -> str:
         if not isinstance(api_name_str, str):
@@ -1028,127 +1031,4 @@ class PrecatoriosCrawler:
                 output_file=out_file,
                 exc_info=True,
             )
-            raise
-
-    @retry(
-        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10)
-    )
-    @track_time(entity="all")
-    def fetch_entities(self) -> List[str]:
-        """Busca a lista de entidades disponíveis."""
-        payload = {
-            "version": "1.0.0",
-            "queries": [
-                {
-                    "Query": {
-                        "Commands": [
-                            {
-                                "SemanticQueryDataShapeCommand": {
-                                    "Query": {
-                                        "Version": 2,
-                                        "From": [
-                                            {
-                                                "Name": "d",
-                                                "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
-                                                "Type": 0,
-                                            }
-                                        ],
-                                        "Select": [
-                                            {
-                                                "Column": {
-                                                    "Expression": {
-                                                        "SourceRef": {"Source": "d"}
-                                                    },
-                                                    "Property": "dfslcp_dsc_entidade",
-                                                },
-                                                "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_entidade",
-                                            }
-                                        ],
-                                    },
-                                    "Binding": {
-                                        "Primary": {
-                                            "Groupings": [{"Projections": [0]}]
-                                        },
-                                        "DataReduction": {
-                                            "DataVolume": 3,
-                                            "Primary": {"Window": {}},
-                                        },
-                                        "IncludeEmptyGroups": True,
-                                        "Version": 1,
-                                    },
-                                }
-                            }
-                        ],
-                        "QueryId": "",
-                    }
-                }
-            ],
-            "cancelQueries": [],
-            "modelId": 4287487,
-        }
-
-        try:
-            logger.info("fetching_entities")
-            response = self.session.post(self.api_url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-
-            if not data.get("results"):
-                return []
-
-            result_data = data["results"][0]["result"]["data"]
-            dsr = result_data.get("dsr", {})
-
-            if not dsr:
-                return []
-
-            ds_list = dsr.get("DS", [])
-            if not ds_list:
-                return []
-
-            entities = []
-            for ds in ds_list:
-                if "PH" not in ds:
-                    continue
-
-                for ph in ds["PH"]:
-                    if "DM0" not in ph:
-                        continue
-
-                    for dm0 in ph["DM0"]:
-                        if "G0" in dm0:
-                            entity = dm0["G0"].strip()
-                            # Ignora o item de seleção e remove aspas
-                            if entity != "--- Selecione a Entidade":
-                                # Decodifica o nome da entidade antes de adicionar à lista
-                                decoded_entity = self._decode_utf8(entity.strip("'"))
-                                entities.append(decoded_entity)
-
-            # Remove duplicatas e ordena
-            entities = sorted(set(entities))
-
-            logger.info("entities_found", count=len(entities))
-            return entities
-
-        except Exception as e:
-            logger.error("entities_error", error=str(e), exc_info=True)
-            raise
-
-    def save_entities(self, entities: List[str], out_file: str):
-        """Salva a lista de entidades em um arquivo CSV."""
-        try:
-            mode = "w" if not os.path.exists(out_file) else "a"
-            write_header = mode == "w"
-
-            with open(out_file, mode, newline="", encoding="utf-8-sig") as f:
-                writer = csv.writer(f)
-                if write_header:
-                    writer.writerow(["entidade"])
-                for entity in entities:
-                    writer.writerow([entity])
-
-            logger.info("entities_saved", file=out_file, count=len(entities))
-
-        except IOError as e:
-            logger.error("save_error", error=str(e), exc_info=True)
             raise

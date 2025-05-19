@@ -212,6 +212,7 @@ class PrecatorioResponse(BaseModel):
     status: str
     message: str
     data: Optional[List[Precatorio]] = None
+    pinata_url: Optional[str] = None
 
     class Config:
         json_encoders = {
@@ -227,6 +228,7 @@ class EntidadeResponse(BaseModel):
     status: str
     message: str
     data: Optional[List[EntityMapping]] = None
+    pinata_url: Optional[str] = None
 
     class Config:
         json_encoders = {
@@ -234,6 +236,32 @@ class EntidadeResponse(BaseModel):
             date: lambda d: d.isoformat() if d else None,
             Decimal: lambda dec: str(dec) if dec is not None else None,
         }
+        populate_by_name = True
+        use_enum_values = True
+
+
+class HealthCheckResponse(BaseModel):
+    status: str
+    message: str
+
+    class Config:
+        populate_by_name = True
+        use_enum_values = True
+
+
+class FetchPrecatoriosQuery(BaseModel):
+    entity: str = Field(
+        ...,
+        description='Slug da entidade para buscar precatórios. Ex: municipio-de-fortaleza',
+        example='municipio-de-fortaleza'
+    )
+    count: Optional[int] = Field(
+        None,
+        description='Número de registros a serem retornados. Se não fornecido, busca todos.',
+        example=10
+    )
+
+    class Config:
         populate_by_name = True
         use_enum_values = True
 

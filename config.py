@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import (
     Dict,
     List,
+    Optional
 )  # Adicionado Any para compatibilidade com PAYLOAD_STRUCTURE se necessário, mas Dict e List são os principais.
 
 # Carrega as variáveis de ambiente
@@ -27,6 +28,26 @@ class CrawlerConfig:
         )
     )
     default_entity: str = "MUNICIPIO DE FORTALEZA"
+    model_id: int = field(default_factory=lambda: int(os.getenv("MODEL_ID", "4287487")))
+    entities_output_filename: str = field(default_factory=lambda: os.getenv("ENTITIES_OUTPUT_FILENAME", "entidades_tjce.csv"))
+
+    # Configurações de Cache
+    cache_default_timeout: int = field(default_factory=lambda: int(os.getenv("CACHE_DEFAULT_TIMEOUT", "300")))
+    cache_timeout_entities: int = field(default_factory=lambda: int(os.getenv("CACHE_TIMEOUT_ENTITIES", "3600")))
+
+    # Configurações de Rate Limit
+    rate_limit_default: str = field(default_factory=lambda: os.getenv("RATE_LIMIT_DEFAULT", "200 per day,50 per hour"))
+    rate_limit_entities: str = field(default_factory=lambda: os.getenv("RATE_LIMIT_ENTITIES", "60 per hour"))
+    rate_limit_fetch: str = field(default_factory=lambda: os.getenv("RATE_LIMIT_FETCH", "50 per hour,10 per minute"))
+
+    # Configurações do Pinata
+    pinata_api_jwt: Optional[str] = field(default_factory=lambda: os.getenv("PINATA_API_JWT"))
+    pinata_gateway_url: Optional[str] = field(default_factory=lambda: os.getenv("PINATA_GATEWAY_URL", "https://gateway.pinata.cloud/ipfs/"))
+    pinata_api_upload_url: str = "https://api.pinata.cloud/pinning/pinFileToIPFS"
+
+    # Configurações do Flask
+    flask_debug_mode: bool = field(default_factory=lambda: os.getenv("FLASK_DEBUG_MODE", "False").lower() == "true")
+    flask_port: int = field(default_factory=lambda: int(os.getenv("FLASK_PORT", "5000")))
 
     def __post_init__(self):
         if not self.api_url.endswith("synchronous=true"):
