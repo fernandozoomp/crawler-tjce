@@ -1,1 +1,496 @@
-{"jobIds":["1284e682-0879-4126-95b6-590be0e73bd0"],"results":[{"jobId":"1284e682-0879-4126-95b6-590be0e73bd0","result":{"data":{"timestamp":"2025-05-19T03:25:44.891Z","rootActivityId":"b351de58-3e8f-4c6f-9d72-e43d33335d90","descriptor":{"Select":[{"Kind":1,"Depth":0,"Value":"G0","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_proc_precatorio"},"Calc":"G0","IsSameAsSelect":true}],"Name":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_proc_precatorio"},{"Kind":1,"Depth":0,"Value":"G1","Format":"0","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_num_ano_orcamento"},"Calc":"G1","IsSameAsSelect":true}],"Name":"Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ano_orcamento)"},{"Kind":1,"Depth":0,"Value":"G2","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_natureza"},"Calc":"G2","IsSameAsSelect":true}],"Name":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_natureza"},{"Kind":1,"Depth":0,"Value":"G3","Format":"d","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dat_cadastro"},"Calc":"G3","IsSameAsSelect":true}],"Name":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dat_cadastro Hierarquia.dfslcp_dat_cadastro"},{"Kind":1,"Depth":0,"Value":"G4","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_tipo_classificao"},"Calc":"G4","IsSameAsSelect":true}],"Name":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_tipo_classificao"},{"Kind":1,"Depth":0,"Value":"G5","Format":"\"R$\"\\ #,0.00;-\"R$\"\\ #,0.00;\"R$\"\\ #,0.00","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_vlr_original"},"Calc":"G5","IsSameAsSelect":true}],"Name":"Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_vlr_original)"},{"Kind":1,"Depth":0,"Value":"G6","Format":"0","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_num_ordem"},"Calc":"G6","IsSameAsSelect":true}],"Name":"Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ordem)"},{"Kind":1,"Depth":0,"Value":"G7","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_sit_precatorio"},"Calc":"G7","IsSameAsSelect":true}],"Name":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_sit_precatorio"},{"Kind":1,"Depth":0,"Value":"G8","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_comarca"},"Calc":"G8","IsSameAsSelect":true}],"Name":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_comarca"},{"Kind":1,"Depth":0,"Value":"G9","GroupKeys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"ValorAtualFormatado"},"Calc":"G9","IsSameAsSelect":true}],"Name":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.ValorAtualFormatado"}],"Expressions":{"Primary":{"Groupings":[{"Keys":[{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_proc_precatorio"},"Select":0},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_num_ano_orcamento"},"Select":1},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_natureza"},"Select":2},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dat_cadastro"},"Select":3},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_tipo_classificao"},"Select":4},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_vlr_original"},"Select":5},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_num_ordem"},"Select":6},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_sit_precatorio"},"Select":7},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"dfslcp_dsc_comarca"},"Select":8},{"Source":{"Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Property":"ValorAtualFormatado"},"Select":9}],"Member":"DM0"}]}},"Version":2},"fromCache":false,"dsr":{"Version":2,"MinorVersion":1,"DS":[{"N":"DS0","PH":[{"DM0":[{"S":[{"N":"G0","T":1,"DN":"D0"},{"N":"G1","T":4},{"N":"G2","T":1,"DN":"D1"},{"N":"G3","T":7},{"N":"G4","T":1,"DN":"D2"},{"N":"G5","T":3},{"N":"G6","T":4},{"N":"G7","T":1,"DN":"D3"},{"N":"G8","T":1,"DN":"D4"},{"N":"G9","T":1,"DN":"D5"}],"C":[0,2026,0,1715558400000,0,207680.84,1,0,0,0]},{"C":[1,2025,1688342400000,103780.78,2,1],"R":404},{"C":[2,2026,1715558400000,225718.55,3,1,2],"R":276},{"C":[3,1716595200000,45158.88,4,0,3],"R":278},{"C":[4,1717718400000,37045.61,5,4],"R":406},{"C":[5,2025,1685577600000,53456.14,6,5],"R":404},{"C":[6,2023,1628640000000,15178.89,7,6],"R":404},{"C":[7,2025,1711756800000,63039.45,8,7],"R":404},{"C":[8,1706140800000,17656.13,9,8],"R":406},{"C":[9,2024,1650585600000,643308.68,10,9],"R":404}]}],"IC":false,"RT":[["10L","'0002285-55.2022.8.06.0000'","2024L","'Alimentar'","datetime'2022-04-22T00:00:00'","'Preferencial'","643308.68D","'Cadastrado'","'COMARCA DE FORTALEZA'","'R$1.930.992,42'"]],"ValueDicts":{"D0":["3003313-36.2024.8.06.0000","0003515-98.2023.8.06.0000","3003468-39.2024.8.06.0000","3003792-29.2024.8.06.0000","3004153-46.2024.8.06.0000","0003037-90.2023.8.06.0000","0002353-39.2021.8.06.0000","3001935-45.2024.8.06.0000","3000453-62.2024.8.06.0000","0002285-55.2022.8.06.0000"],"D1":["Alimentar"],"D2":["Preferencial"],"D3":["Cadastrado","Em Pagamento Parcelado"],"D4":["COMARCA DE FORTALEZA"],"D5":["R$361.354,01","R$146.380,67","R$180.033,92","R$56.494,09","R$50.852,28","R$75.319,96","R$22.551,36","R$74.464,86","R$36.705,87","R$1.930.992,42"]}}]}}}}]}
+{
+    "jobIds": [
+        "1284e682-0879-4126-95b6-590be0e73bd0"
+    ],
+    "results": [
+        {
+            "jobId": "1284e682-0879-4126-95b6-590be0e73bd0",
+            "result": {
+                "data": {
+                    "timestamp": "2025-05-19T03:25:44.891Z",
+                    "rootActivityId": "b351de58-3e8f-4c6f-9d72-e43d33335d90",
+                    "descriptor": {
+                        "Select": [
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G0",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_dsc_proc_precatorio"
+                                        },
+                                        "Calc": "G0",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_proc_precatorio"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G1",
+                                "Format": "0",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_num_ano_orcamento"
+                                        },
+                                        "Calc": "G1",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ano_orcamento)"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G2",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_dsc_natureza"
+                                        },
+                                        "Calc": "G2",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_natureza"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G3",
+                                "Format": "d",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_dat_cadastro"
+                                        },
+                                        "Calc": "G3",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dat_cadastro Hierarquia.dfslcp_dat_cadastro"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G4",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_dsc_tipo_classificao"
+                                        },
+                                        "Calc": "G4",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_tipo_classificao"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G5",
+                                "Format": "\"R$\"\\ #,0.00;-\"R$\"\\ #,0.00;\"R$\"\\ #,0.00",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_vlr_original"
+                                        },
+                                        "Calc": "G5",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_vlr_original)"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G6",
+                                "Format": "0",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_num_ordem"
+                                        },
+                                        "Calc": "G6",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ordem)"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G7",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_dsc_sit_precatorio"
+                                        },
+                                        "Calc": "G7",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_sit_precatorio"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G8",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "dfslcp_dsc_comarca"
+                                        },
+                                        "Calc": "G8",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_comarca"
+                            },
+                            {
+                                "Kind": 1,
+                                "Depth": 0,
+                                "Value": "G9",
+                                "GroupKeys": [
+                                    {
+                                        "Source": {
+                                            "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                            "Property": "ValorAtualFormatado"
+                                        },
+                                        "Calc": "G9",
+                                        "IsSameAsSelect": true
+                                    }
+                                ],
+                                "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.ValorAtualFormatado"
+                            }
+                        ],
+                        "Expressions": {
+                            "Primary": {
+                                "Groupings": [
+                                    {
+                                        "Keys": [
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_dsc_proc_precatorio"
+                                                },
+                                                "Select": 0
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_num_ano_orcamento"
+                                                },
+                                                "Select": 1
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_dsc_natureza"
+                                                },
+                                                "Select": 2
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_dat_cadastro"
+                                                },
+                                                "Select": 3
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_dsc_tipo_classificao"
+                                                },
+                                                "Select": 4
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_vlr_original"
+                                                },
+                                                "Select": 5
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_num_ordem"
+                                                },
+                                                "Select": 6
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_dsc_sit_precatorio"
+                                                },
+                                                "Select": 7
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "dfslcp_dsc_comarca"
+                                                },
+                                                "Select": 8
+                                            },
+                                            {
+                                                "Source": {
+                                                    "Entity": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO",
+                                                    "Property": "ValorAtualFormatado"
+                                                },
+                                                "Select": 9
+                                            }
+                                        ],
+                                        "Member": "DM0"
+                                    }
+                                ]
+                            }
+                        },
+                        "Version": 2
+                    },
+                    "fromCache": false,
+                    "dsr": {
+                        "Version": 2,
+                        "MinorVersion": 1,
+                        "DS": [
+                            {
+                                "N": "DS0",
+                                "PH": [
+                                    {
+                                        "DM0": [
+                                            {
+                                                "S": [
+                                                    {
+                                                        "N": "G0",
+                                                        "T": 1,
+                                                        "DN": "D0"
+                                                    },
+                                                    {
+                                                        "N": "G1",
+                                                        "T": 4
+                                                    },
+                                                    {
+                                                        "N": "G2",
+                                                        "T": 1,
+                                                        "DN": "D1"
+                                                    },
+                                                    {
+                                                        "N": "G3",
+                                                        "T": 7
+                                                    },
+                                                    {
+                                                        "N": "G4",
+                                                        "T": 1,
+                                                        "DN": "D2"
+                                                    },
+                                                    {
+                                                        "N": "G5",
+                                                        "T": 3
+                                                    },
+                                                    {
+                                                        "N": "G6",
+                                                        "T": 4
+                                                    },
+                                                    {
+                                                        "N": "G7",
+                                                        "T": 1,
+                                                        "DN": "D3"
+                                                    },
+                                                    {
+                                                        "N": "G8",
+                                                        "T": 1,
+                                                        "DN": "D4"
+                                                    },
+                                                    {
+                                                        "N": "G9",
+                                                        "T": 1,
+                                                        "DN": "D5"
+                                                    }
+                                                ],
+                                                "C": [
+                                                    0,
+                                                    2026,
+                                                    0,
+                                                    1715558400000,
+                                                    0,
+                                                    207680.84,
+                                                    1,
+                                                    0,
+                                                    0,
+                                                    0
+                                                ]
+                                            },
+                                            {
+                                                "C": [
+                                                    1,
+                                                    2025,
+                                                    1688342400000,
+                                                    103780.78,
+                                                    2,
+                                                    1
+                                                ],
+                                                "R": 404
+                                            },
+                                            {
+                                                "C": [
+                                                    2,
+                                                    2026,
+                                                    1715558400000,
+                                                    225718.55,
+                                                    3,
+                                                    1,
+                                                    2
+                                                ],
+                                                "R": 276
+                                            },
+                                            {
+                                                "C": [
+                                                    3,
+                                                    1716595200000,
+                                                    45158.88,
+                                                    4,
+                                                    0,
+                                                    3
+                                                ],
+                                                "R": 278
+                                            },
+                                            {
+                                                "C": [
+                                                    4,
+                                                    1717718400000,
+                                                    37045.61,
+                                                    5,
+                                                    4
+                                                ],
+                                                "R": 406
+                                            },
+                                            {
+                                                "C": [
+                                                    5,
+                                                    2025,
+                                                    1685577600000,
+                                                    53456.14,
+                                                    6,
+                                                    5
+                                                ],
+                                                "R": 404
+                                            },
+                                            {
+                                                "C": [
+                                                    6,
+                                                    2023,
+                                                    1628640000000,
+                                                    15178.89,
+                                                    7,
+                                                    6
+                                                ],
+                                                "R": 404
+                                            },
+                                            {
+                                                "C": [
+                                                    7,
+                                                    2025,
+                                                    1711756800000,
+                                                    63039.45,
+                                                    8,
+                                                    7
+                                                ],
+                                                "R": 404
+                                            },
+                                            {
+                                                "C": [
+                                                    8,
+                                                    1706140800000,
+                                                    17656.13,
+                                                    9,
+                                                    8
+                                                ],
+                                                "R": 406
+                                            },
+                                            {
+                                                "C": [
+                                                    9,
+                                                    2024,
+                                                    1650585600000,
+                                                    643308.68,
+                                                    10,
+                                                    9
+                                                ],
+                                                "R": 404
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "IC": false,
+                                "RT": [
+                                    [
+                                        "10L",
+                                        "'0002285-55.2022.8.06.0000'",
+                                        "2024L",
+                                        "'Alimentar'",
+                                        "datetime'2022-04-22T00:00:00'",
+                                        "'Preferencial'",
+                                        "643308.68D",
+                                        "'Cadastrado'",
+                                        "'COMARCA DE FORTALEZA'",
+                                        "'R$1.930.992,42'"
+                                    ]
+                                ],
+                                "ValueDicts": {
+                                    "D0": [
+                                        "3003313-36.2024.8.06.0000",
+                                        "0003515-98.2023.8.06.0000",
+                                        "3003468-39.2024.8.06.0000",
+                                        "3003792-29.2024.8.06.0000",
+                                        "3004153-46.2024.8.06.0000",
+                                        "0003037-90.2023.8.06.0000",
+                                        "0002353-39.2021.8.06.0000",
+                                        "3001935-45.2024.8.06.0000",
+                                        "3000453-62.2024.8.06.0000",
+                                        "0002285-55.2022.8.06.0000"
+                                    ],
+                                    "D1": [
+                                        "Alimentar"
+                                    ],
+                                    "D2": [
+                                        "Preferencial"
+                                    ],
+                                    "D3": [
+                                        "Cadastrado",
+                                        "Em Pagamento Parcelado"
+                                    ],
+                                    "D4": [
+                                        "COMARCA DE FORTALEZA"
+                                    ],
+                                    "D5": [
+                                        "R$361.354,01",
+                                        "R$146.380,67",
+                                        "R$180.033,92",
+                                        "R$56.494,09",
+                                        "R$50.852,28",
+                                        "R$75.319,96",
+                                        "R$22.551,36",
+                                        "R$74.464,86",
+                                        "R$36.705,87",
+                                        "R$1.930.992,42"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+}

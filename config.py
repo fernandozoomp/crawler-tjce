@@ -110,7 +110,7 @@ class FieldConfig:
             "valor_atual": {
                 "type": "Decimal",  # Corrigido para Decimal como estava em config_new FieldConfig
                 "default": "0.0",
-                "api_name": "dfslcp_vlr_atual",  # Confirmado que corresponde ao PAYLOAD_STRUCTURE
+                "api_name": "ValorAtualFormatado",
             },
             "situacao": {
                 "type": "str",
@@ -231,9 +231,9 @@ PAYLOAD_STRUCTURE = {
                                             "Expression": {
                                                 "SourceRef": {"Source": "d"}
                                             },
-                                            "Property": "dfslcp_vlr_atual",  # Confirmado correto
+                                            "Property": "ValorAtualFormatado",
                                         },
-                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_vlr_atual",
+                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.ValorAtualFormatado",
                                     },
                                 ],
                                 "Where": [

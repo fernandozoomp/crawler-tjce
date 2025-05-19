@@ -1,24 +1,28 @@
 from datetime import datetime, date
 from typing import Optional, List, Any, Union
-from pydantic import BaseModel, Field, field_validator, ConfigDict, model_validator
+from pydantic import BaseModel, Field, validator
 from decimal import Decimal, InvalidOperation
 import logging
 
-# Configuração para serialização JSON
-common_config = ConfigDict(
-    json_encoders={
-        datetime: lambda dt: dt.isoformat() if dt else None,
-        date: lambda d: d.isoformat() if d else None,
-        Decimal: lambda dec: str(dec) if dec is not None else None,
-    },
-    populate_by_name=True,
-    use_enum_values=True,
-)
+# Configuração para serialização JSON não é mais em ConfigDict global para V1
+# Será definida dentro de cada modelo na classe Config
+
+
+class EntityMapping(BaseModel):
+    official_name: str
+    slug: str
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat() if dt else None,
+            date: lambda d: d.isoformat() if d else None,
+            Decimal: lambda dec: str(dec) if dec is not None else None,
+        }
+        populate_by_name = True
+        use_enum_values = True
 
 
 class Precatorio(BaseModel):
-    model_config = common_config
-
     ordem: int = Field(..., ge=0)
     processo: str = Field(..., min_length=1)
     comarca: str = Field(default="-")
@@ -30,7 +34,18 @@ class Precatorio(BaseModel):
     valor_atual: Decimal = Field(default=Decimal("0.0"))
     situacao: str = Field(default="-")
 
-    @field_validator("processo", mode="before")
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat() if dt else None,
+            date: lambda d: d.isoformat() if d else None,
+            Decimal: lambda dec: str(dec) if dec is not None else None,
+        }
+        populate_by_name = True
+        use_enum_values = True
+        # Pydantic V1 usa `orm_mode = True` se você estivesse usando com ORMs e quisesse conversão automática.
+        # Para este caso, `populate_by_name` e `json_encoders` são os relevantes.
+
+    @validator("processo", pre=True, always=True)
     @classmethod
     def clean_processo(cls, v: Any) -> str:
         if not v or not isinstance(v, str):
@@ -43,8 +58,8 @@ class Precatorio(BaseModel):
             raise ValueError("Processo não pode ser vazio após limpeza")
         return processed_v.strip()
 
-    @field_validator(
-        "comarca", "natureza", "tipo_classificacao", "situacao", mode="before"
+    @validator(
+        "comarca", "natureza", "tipo_classificacao", "situacao", pre=True, always=True
     )
     @classmethod
     def clean_optional_strings(cls, v: Any) -> str:
@@ -54,7 +69,7 @@ class Precatorio(BaseModel):
             return str(v).strip()
         return v.strip()
 
-    @field_validator("data_cadastro", mode="before")
+    @validator("data_cadastro", pre=True, always=True)
     @classmethod
     def clean_data_cadastro(cls, v: Any) -> Optional[datetime]:
         if v is None or (isinstance(v, str) and (v.strip() == "-" or not v.strip())):
@@ -83,7 +98,7 @@ class Precatorio(BaseModel):
             try:
                 if v.isdigit():
                     num_v = float(v)
-                    if num_v > 253402300799:
+                    if num_v > 253402300799: # Limite para timestamps em segundos que podem ser milissegundos
                         return datetime.fromtimestamp(num_v / 1000.0)
                     return datetime.fromtimestamp(num_v)
             except ValueError:
@@ -91,7 +106,7 @@ class Precatorio(BaseModel):
 
         if isinstance(v, (int, float)):
             try:
-                if v > 253402300799:
+                if v > 253402300799: # Checagem similar para números
                     return datetime.fromtimestamp(v / 1000.0)
                 return datetime.fromtimestamp(v)
             except Exception:
@@ -101,7 +116,7 @@ class Precatorio(BaseModel):
         logger.warning(f"Formato de data_cadastro não reconhecido: {v}")
         return None
 
-    @field_validator("ano_orcamento", mode="before")
+    @validator("ano_orcamento", pre=True, always=True)
     @classmethod
     def validate_ano_orcamento(cls, v: Any) -> int:
         current_year = datetime.now().year
@@ -112,7 +127,8 @@ class Precatorio(BaseModel):
 
         if isinstance(v, str):
             if not v.isdigit():
-                if len(v) > 8 and all(c.isdigit() for c in v):
+                # Tentativa de extrair ano de um timestamp em string (geralmente milissegundos)
+                if len(v) > 8 and all(c.isdigit() for c in v): # Heurística para timestamp longo em string
                     try:
                         return datetime.fromtimestamp(int(v) / 1000.0).year
                     except ValueError:
@@ -127,11 +143,12 @@ class Precatorio(BaseModel):
         else:
             return default_ano
 
-        if v_int > 3000 and len(str(v_int)) > 8:
+        # Se o valor for um timestamp muito grande (provavelmente ms), converte para ano
+        if v_int > 3000 and len(str(v_int)) > 8: # Heurística: se > 3000 e tem muitos dígitos
             try:
                 return datetime.fromtimestamp(v_int / 1000.0).year
             except ValueError:
-                pass
+                pass # Continua para a próxima verificação
 
         if 1900 <= v_int <= current_year + 5:
             return v_int
@@ -141,7 +158,7 @@ class Precatorio(BaseModel):
         )
         return default_ano
 
-    @field_validator("valor_original", "valor_atual", mode="before")
+    @validator("valor_original", "valor_atual", pre=True, always=True)
     @classmethod
     def clean_decimal_fields(cls, v: Any) -> Decimal:
         if isinstance(v, Decimal):
@@ -162,11 +179,17 @@ class Precatorio(BaseModel):
                 cleaned_v = cleaned_v.replace(",", "")
             elif num_commas == 1 and num_dots == 0:  # Formato: 1234,56
                 cleaned_v = cleaned_v.replace(",", ".")
-            elif (
-                num_dots == 1 and num_commas == 0 and len(cleaned_v.split(".")[-1]) == 3
-            ):  # Formato: 1.234 (milhares)
-                cleaned_v = cleaned_v.replace(".", "")
-            # Nenhum outro tratamento especial de ponto/vírgula, assume que está ok ou é simples.
+            # Casos como '1.234' (milhar sem decimal) ou '1234.56' devem ser tratados com cuidado
+            # Se len(parte_após_ponto) == 3 e não há vírgula, pode ser milhar. Ex: 1.234
+            elif num_dots == 1 and num_commas == 0 and len(cleaned_v.split(".")[-1]) == 3:
+                 # Verifica se o ponto é realmente um separador de milhar e não decimal
+                 # Ex: "1.234" -> "1234", mas "123.456" (com decimal de 3 casas) -> "123.456"
+                 # Esta lógica pode ser complexa. Uma forma mais simples é remover pontos se eles não forem seguidos por 2 decimais.
+                 # Se o último ponto for um separador de milhar e não houver vírgula
+                 if cleaned_v.count('.') == 1 and len(cleaned_v.split('.')[-1]) == 3 and not any(char.isdigit() for char in cleaned_v.split('.')[-1][:2]): # ex 1.23X
+                     pass # não faz nada, pode ser um decimal com 3 casas
+                 elif cleaned_v.count('.') >= 1 and len(cleaned_v.split('.')[-1]) != 2 : #  Trata pontos como separadores de milhar se a parte decimal não for XX
+                     cleaned_v = cleaned_v.replace(".", "")
 
             try:
                 return Decimal(cleaned_v)
@@ -179,7 +202,6 @@ class Precatorio(BaseModel):
         if isinstance(v, (int, float)):
             return Decimal(str(v))  # Converte via string para precisão
 
-        # Se chegou aqui e não é Decimal, str, int, float, ou None/string vazia, então é um tipo inesperado.
         logger.warning(
             f"Tipo inesperado para valor Decimal: {type(v)}, valor: {v}. Usando 0.0."
         )
@@ -187,17 +209,33 @@ class Precatorio(BaseModel):
 
 
 class PrecatorioResponse(BaseModel):
-    model_config = common_config
     status: str
     message: str
     data: Optional[List[Precatorio]] = None
 
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat() if dt else None,
+            date: lambda d: d.isoformat() if d else None,
+            Decimal: lambda dec: str(dec) if dec is not None else None,
+        }
+        populate_by_name = True
+        use_enum_values = True
+
 
 class EntidadeResponse(BaseModel):
-    model_config = common_config
     status: str
     message: str
-    data: Optional[List[str]] = None
+    data: Optional[List[EntityMapping]] = None
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat() if dt else None,
+            date: lambda d: d.isoformat() if d else None,
+            Decimal: lambda dec: str(dec) if dec is not None else None,
+        }
+        populate_by_name = True
+        use_enum_values = True
 
 
 # Adicionar logger no escopo do módulo se não estiver globalmente disponível

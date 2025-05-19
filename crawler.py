@@ -757,219 +757,91 @@ class PrecatoriosCrawler:
                         last_processed_pydantic_row = pydantic_input_row.copy()
 
                     else:  # Linhas delta (i > 0)
-                        if (
-                            not s_schema
-                        ):  # Schema S não foi definido pela primeira linha da página
-                            logger.error(
-                                f"Página {page_index}, Linha {i}: Schema S não disponível. Pulando linha."
-                            )
-                            continue
-                        if (
-                            not last_processed_pydantic_row
-                        ):  # Linha base não foi processada com sucesso
+                        if not last_processed_pydantic_row:
                             logger.error(
                                 f"Página {page_index}, Linha {i}: Linha base anterior não processada. Pulando linha delta."
                             )
                             continue
+                        
+                        pydantic_input_row = last_processed_pydantic_row.copy()
+                        current_c_values = raw_row_data_container.get("C", [])
+                        # rulifier_r = raw_row_data_container.get("R") # Rulifier R não será usado para os campos principais abaixo
 
-                        pydantic_input_row = (
-                            last_processed_pydantic_row.copy()
-                        )  # Herda da anterior
+                        try:
+                            # Processo (S[0], DN: D0)
+                            processo_updated = False
+                            if value_dicts.get("D0") and i < len(value_dicts["D0"]):
+                                val_processo = value_dicts["D0"][i]
+                                pydantic_input_row["processo"] = self._format_value(self._decode_utf8(str(val_processo)), self.field_config_instance.field_mapping["processo"]["type"])
+                                processo_updated = True
+                            elif current_c_values and value_dicts.get("D0"):
+                                try:
+                                    idx_processo = int(current_c_values[0])
+                                    if idx_processo < len(value_dicts["D0"]):
+                                        val_processo = value_dicts["D0"][idx_processo]
+                                        pydantic_input_row["processo"] = self._format_value(self._decode_utf8(str(val_processo)), self.field_config_instance.field_mapping["processo"]["type"])
+                                        processo_updated = True
+                                except (ValueError, IndexError):
+                                    logger.warning(f"Linha delta {i}: Falha ao usar C[0] como índice para Processo (D0).")
+                            if not processo_updated:
+                                logger.debug(f"Linha delta {i}: Processo não atualizado, herdado.")
 
-                        if rulifier_r is None:
-                            logger.warning(
-                                f"Página {page_index}, Linha {i}: Linha delta sem Rulifier R. "
-                                f"Os valores em C ({current_c_values}) podem estar incompletos ou não serem deltas. "
-                                "Tratando como se não houvesse mudanças em relação à linha anterior para esta linha."
-                            )
-                            # Se C está vazio e R é None, pydantic_input_row (cópia da anterior) é efetivamente usada.
-                            # Se C não está vazio mas R é None, a interpretação é ambígua.
-                            # A API Power BI geralmente fornece R se C for um delta.
-                            # Se C for de tamanho completo e R for None, é uma linha completa não delta.
-                            if len(current_c_values) == len(
-                                s_schema
-                            ):  # C completo, sem R, após a primeira linha
-                                logger.info(
-                                    f"Página {page_index}, Linha {i}: Detectada linha completa (C do mesmo tamanho do schema S) sem R após a primeira. Processando como linha base."
-                                )
-                                # Reset pydantic_input_row para defaults e preenche tudo de current_c_values
-                                temp_base_row: Dict[str, Any] = {}
-                                for (
-                                    csv_f_init,
-                                    csv_attrs_init,
-                                ) in self.field_config_instance.field_mapping.items():
-                                    temp_base_row[csv_f_init] = self._format_value(
-                                        csv_attrs_init.get("default"),
-                                        csv_attrs_init.get("type", "str"),
-                                    )
-                                for col_idx, schema_item in enumerate(s_schema):
-                                    raw_value_for_field = current_c_values[col_idx]
-                                    api_name_raw = global_descriptor_selects[
-                                        col_idx
-                                    ].get("Name")
-                                    base_api_name = self._get_base_field_name(
-                                        api_name_raw
-                                    )
-                                    csv_field_cfg = api_name_to_csv_field_map.get(
-                                        base_api_name
-                                    )
-                                    if not csv_field_cfg:
-                                        continue
-                                    target_csv_field = csv_field_cfg["csv_field"]
-                                    target_field_type = csv_field_cfg["type"]
-                                    dict_name = schema_item.get("DN")
-                                    val_to_assign = None
-                                    resolved_value = False
-                                    if dict_name:
-                                        try:
-                                            actual_idx = int(raw_value_for_field)
-                                            vd_list = value_dicts.get(dict_name)
-                                            if isinstance(
-                                                vd_list, list
-                                            ) and 0 <= actual_idx < len(vd_list):
-                                                val_to_assign = vd_list[actual_idx]
-                                                resolved_value = True
-                                            else:
-                                                logger.warning(
-                                                    "Idx %s para VD %s (campo %s) fora dos bounds (linha %s, pág %s). Default.",
-                                                    actual_idx,
-                                                    dict_name,
-                                                    target_csv_field,
-                                                    i,
-                                                    page_index,
-                                                )
-                                        except (ValueError, TypeError):
-                                            logger.warning(
-                                                "Valor C %s para VD %s (campo %s) não é int (linha %s, pág %s). Default.",
-                                                str(raw_value_for_field)[:20],
-                                                dict_name,
-                                                target_csv_field,
-                                                i,
-                                                page_index,
-                                            )
-                                    else:
-                                        val_to_assign = raw_value_for_field
-                                        resolved_value = True
-                                    if resolved_value:
-                                        decoded = (
-                                            self._decode_utf8(str(val_to_assign))
-                                            if val_to_assign is not None
-                                            else None
-                                        )
-                                        temp_base_row[target_csv_field] = (
-                                            self._format_value(
-                                                decoded, target_field_type
-                                            )
-                                        )
-                                pydantic_input_row = temp_base_row  # Substitui a herdada pela processada como base
-                            # else: R é None, C é parcial -> comportamento indefinido, a linha herdada é mantida.
 
-                        else:  # Rulifier R está presente
-                            delta_iterator = iter(current_c_values)
-                            for col_idx, schema_item in enumerate(s_schema):
-                                if (rulifier_r >> col_idx) & 1:  # Este campo mudou
-                                    try:
-                                        new_raw_val_for_field = next(delta_iterator)
-                                    except StopIteration:
-                                        logger.error(
-                                            f"Página {page_index}, Linha {i}: Rulifier R indicou valor em C para col {col_idx}, mas C (delta) esgotou."
-                                        )
-                                        break  # Para de processar deltas para esta linha
+                            # Ano Orçamento (S[1], literal) - Posição 1 em C para linhas delta (0-indexed)
+                            if len(current_c_values) > 1:
+                                val_ano = current_c_values[1]
+                                pydantic_input_row["ano_orcamento"] = self._format_value(self._decode_utf8(str(val_ano)), self.field_config_instance.field_mapping["ano_orcamento"]["type"])
+                            else:
+                                logger.debug(f"Linha delta {i}: Ano Orçamento não atualizado (C muito curto), herdado.")
 
-                                    api_name_raw = global_descriptor_selects[
-                                        col_idx
-                                    ].get("Name")
-                                    base_api_name = self._get_base_field_name(
-                                        api_name_raw
-                                    )
-                                    csv_field_cfg = api_name_to_csv_field_map.get(
-                                        base_api_name
-                                    )
+                            # Data Cadastro (S[3], literal) - Posição 2 em C para linhas delta
+                            if len(current_c_values) > 2:
+                                val_data = current_c_values[2]
+                                pydantic_input_row["data_cadastro"] = self._format_value(self._decode_utf8(str(val_data)), self.field_config_instance.field_mapping["data_cadastro"]["type"])
+                            else:
+                                logger.debug(f"Linha delta {i}: Data Cadastro não atualizada (C muito curto), herdada.")
+                                
+                            # Valor Original (S[5], literal) - Posição 3 em C para linhas delta
+                            if len(current_c_values) > 3:
+                                val_vlr_orig = current_c_values[3]
+                                pydantic_input_row["valor_original"] = self._format_value(self._decode_utf8(str(val_vlr_orig)), self.field_config_instance.field_mapping["valor_original"]["type"])
+                            else:
+                                logger.debug(f"Linha delta {i}: Valor Original não atualizado (C muito curto), herdado.")
 
-                                    if not csv_field_cfg:
-                                        continue
+                            # Ordem (S[6], literal) - Posição 4 em C para linhas delta
+                            if len(current_c_values) > 4:
+                                val_ordem = current_c_values[4]
+                                pydantic_input_row["ordem"] = self._format_value(self._decode_utf8(str(val_ordem)), self.field_config_instance.field_mapping["ordem"]["type"])
+                            else:
+                                logger.debug(f"Linha delta {i}: Ordem não atualizada (C muito curto), herdada.")
+                            
+                            # Valor Atual (S[9], DN: D5)
+                            valor_atual_updated = False
+                            if value_dicts.get("D5") and i < len(value_dicts["D5"]):
+                                val_vlr_atual = value_dicts["D5"][i]
+                                pydantic_input_row["valor_atual"] = self._format_value(self._decode_utf8(str(val_vlr_atual)), self.field_config_instance.field_mapping["valor_atual"]["type"])
+                                valor_atual_updated = True
+                            elif len(current_c_values) > 5 and value_dicts.get("D5"):
+                                try:
+                                    idx_vlr_atual = int(current_c_values[5])
+                                    if idx_vlr_atual < len(value_dicts["D5"]):
+                                        val_vlr_atual = value_dicts["D5"][idx_vlr_atual]
+                                        pydantic_input_row["valor_atual"] = self._format_value(self._decode_utf8(str(val_vlr_atual)), self.field_config_instance.field_mapping["valor_atual"]["type"])
+                                        valor_atual_updated = True
+                                except (ValueError, IndexError):
+                                     logger.warning(f"Linha delta {i}: Falha ao usar C[5] como índice para Valor Atual (D5).")
+                            if not valor_atual_updated:
+                                logger.debug(f"Linha delta {i}: Valor Atual não atualizado, herdado.")
 
-                                    target_csv_field = csv_field_cfg["csv_field"]
-                                    target_field_type = csv_field_cfg["type"]
-                                    dict_name = schema_item.get("DN")
-                                    val_to_assign = None
-                                    resolved_value = False
+                            # Os campos restantes (natureza, tipo_classificacao, situacao, comarca)
+                            # ainda dependeriam da lógica original do Rulifier R, que foi omitida nesta modificação
+                            # e, portanto, serão herdados se não forem atualizados por esta nova lógica.
+                            # A integração disso com o Rulifier R para os campos restantes é complexa.
 
-                                    if dict_name:
-                                        try:
-                                            actual_idx = int(new_raw_val_for_field)
-                                            vd_list = value_dicts.get(dict_name)
-                                            if isinstance(
-                                                vd_list, list
-                                            ) and 0 <= actual_idx < len(vd_list):
-                                                val_to_assign = vd_list[actual_idx]
-                                                resolved_value = True
-                                            else:
-                                                len_info = (
-                                                    len(vd_list)
-                                                    if isinstance(vd_list, list)
-                                                    else "N/A"
-                                                )
-                                                logger.warning(
-                                                    "Índice %s (de C-delta '%s') para VD '%s' (campo %s, API %s, linha %s, pág %s). "
-                                                    "Inv_bounds (len: %s). Usando default para este campo delta.",
-                                                    actual_idx,
-                                                    str(new_raw_val_for_field)[:50],
-                                                    dict_name,
-                                                    target_csv_field,
-                                                    base_api_name,
-                                                    i,
-                                                    page_index,
-                                                    len_info,
-                                                )
-                                                # Se o valor delta falha no lookup, o campo na pydantic_input_row
-                                                # (que veio da linha anterior) NÃO é alterado para default global,
-                                                # mas sim o valor da linha anterior é mantido para este campo.
-                                                # Se quisermos resetar para default global:
-                                                # pydantic_input_row[target_csv_field] = self._format_value(csv_field_cfg["default"], target_field_type)
-                                                # Por enquanto, a falha no delta significa que o valor herdado não muda.
-                                                # Para forçar o default do campo se o delta for inválido:
-                                                pydantic_input_row[target_csv_field] = (
-                                                    self._format_value(
-                                                        csv_field_cfg.get("default"),
-                                                        target_field_type,
-                                                    )
-                                                )
-
-                                        except (ValueError, TypeError):
-                                            logger.warning(
-                                                "Valor C-delta '%s' para campo DN '%s' (DN: %s, linha %s, pág %s) não é índice int. "
-                                                "Usando default para este campo delta.",
-                                                str(new_raw_val_for_field)[:50],
-                                                target_csv_field,
-                                                dict_name,
-                                                i,
-                                                page_index,
-                                            )
-                                            pydantic_input_row[target_csv_field] = (
-                                                self._format_value(
-                                                    csv_field_cfg.get("default"),
-                                                    target_field_type,
-                                                )
-                                            )
-                                    else:  # No DN
-                                        val_to_assign = new_raw_val_for_field
-                                        resolved_value = True
-
-                                    if (
-                                        resolved_value
-                                    ):  # Só atualiza se o valor delta foi resolvido (direto ou via VD)
-                                        decoded = (
-                                            self._decode_utf8(str(val_to_assign))
-                                            if val_to_assign is not None
-                                            else None
-                                        )
-                                        pydantic_input_row[target_csv_field] = (
-                                            self._format_value(
-                                                decoded, target_field_type
-                                            )
-                                        )
-
+                        except Exception as e_delta_override:
+                            logger.error(f"Erro no processamento direto de campos delta para linha {i} pag {page_index}: {str(e_delta_override)[:200]}", exc_info=False)
+                            # Se houver erro aqui, pydantic_input_row permanece como cópia da anterior para esta iteração.
+                        
                         last_processed_pydantic_row = pydantic_input_row.copy()
 
                     # Após processar a linha (seja base ou delta), validar e adicionar
@@ -985,7 +857,7 @@ class PrecatoriosCrawler:
 
                     try:
                         precatorio_obj = Precatorio(**pydantic_input_row)
-                        dumped_row = precatorio_obj.model_dump()
+                        dumped_row = precatorio_obj.dict()
                         logger.debug(
                             "pydantic_output_post_dump",
                             row_index_in_page=i,
