@@ -123,7 +123,8 @@ precatorio_response_model_fields = api.model('PrecatorioResponse', {
     'status': fields.String(required=True, description='Status da resposta.'),
     'message': fields.String(required=True, description='Mensagem descritiva da resposta.'),
     'data': fields.List(fields.Nested(precatorio_item_fields), description='Lista de precatórios encontrados.', allow_null=True),
-    'pinata_url': fields.String(description='URL do arquivo CSV de precatórios no Pinata, se o upload for bem-sucedido.', allow_null=True)
+    'pinata_url': fields.String(description='URL do arquivo CSV de precatórios no Pinata, se o upload for bem-sucedido.', allow_null=True),
+    'num_precatorios_found': fields.Integer(description='Número total de precatórios encontrados para a consulta antes do CSV.', required=False, allow_null=True)
 })
 
 # Instância do crawler
@@ -250,92 +251,95 @@ class FetchPrecatorios(Resource):
             try:
                 count = int(count_str)
                 if count <= 0:
-                    logger.warning("Parâmetro 'count' inválido, deve ser um inteiro positivo.")
-                    # Corrigido para usar .dict()
-                    return PrecatorioResponse(status="error", message="Parâmetro 'count' inválido.", data=[]).dict(), 400
+                    logger.warning(f"Valor de 'count' inválido: {count_str}. Ignorando.")
+                    count = None # Trata count <= 0 como "todos"
             except ValueError:
-                logger.warning("Parâmetro 'count' inválido, deve ser um inteiro.")
-                # Corrigido para usar .dict()
-                return PrecatorioResponse(status="error", message="Parâmetro 'count' inválido.", data=[]).dict(), 400
-
+                logger.warning(f"Valor de 'count' não é um inteiro válido: {count_str}. Ignorando.")
+                # Mantém count como None
+        
         if not entity_slug:
-            logger.warning("Parâmetro 'entity' é obrigatório.")
-            # Corrigido para usar .dict()
-            return PrecatorioResponse(status="error", message="Parâmetro 'entity' é obrigatório.", data=[]).dict(), 400
+            logger.error("Parâmetro 'entity' ausente na requisição /api/fetch.")
+            return PrecatorioResponse(status="error", message="Parâmetro 'entity' é obrigatório.", data=[], num_precatorios_found=0).dict(), 400
 
-        logger.info(f"Endpoint /fetch chamado para entidade: {entity_slug}, count: {count}")
-        crawler = PrecatoriosCrawler()
+        if not validate_entity_slug(entity_slug):
+            logger.error(f"Slug de entidade inválido fornecido: {entity_slug}")
+            return PrecatorioResponse(status="error", message=f"Slug de entidade inválido: {entity_slug}", data=[], num_precatorios_found=0).dict(), 400
+
+        official_entity_name = get_api_entity_name(entity_slug)
+        if not official_entity_name:
+            logger.error(f"Não foi possível encontrar o nome oficial para o slug: {entity_slug}")
+            return PrecatorioResponse(status="error", message=f"Nome oficial não encontrado para o slug: {entity_slug}", data=[], num_precatorios_found=0).dict(), 404
+
+        logger.info(f"Endpoint /fetch chamado para entidade: {official_entity_name} (slug: {entity_slug}), count: {count}")
         
-        # Usar um arquivo temporário para o CSV
         temp_dir = tempfile.mkdtemp()
-        timestamp_file = datetime.now().strftime("%Y%m%d%H%M%S")
-        # Sanitizar entity_slug para nome de arquivo
-        safe_entity_slug = entity_slug.replace(" ", "_").replace("/", "_")
-        temp_csv_filename = f"precatorios_{safe_entity_slug}_{timestamp_file}.csv"
-        temp_csv_path = os.path.join(temp_dir, temp_csv_filename)
-        
-        logger.info(f"Arquivo CSV temporário será salvo em: {temp_csv_path}")
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        csv_filename = f"precatorios_{entity_slug}_{timestamp}.csv"
+        temp_csv_path = os.path.join(temp_dir, csv_filename)
 
         try:
-            raw_data = crawler.fetch_data(entity_slug, count=count) # Passa o count para fetch_data
-            if not raw_data:
-                logger.warning(f"Nenhum dado bruto encontrado para {entity_slug}")
-                # Limpa o diretório temporário
-                try:
-                    os.remove(temp_csv_path) # Remove o arquivo se existir (improvável)
-                    os.rmdir(temp_dir) 
-                except OSError as e_clean:
-                    logger.warning(f"Erro ao limpar diretório temporário {temp_dir}: {e_clean}")
-                # Corrigido para usar .dict() e remover count
-                return PrecatorioResponse(status="warning", message="Nenhum dado encontrado para a entidade.", data=[]).dict(), 200
+            raw_data = crawler.fetch_data(entity_slug_or_official_name=entity_slug, count=count) # Passa o slug
 
-            # raw_data é um único dicionário da resposta da API.
-            # normalize_to_rows espera uma lista de dicionários (um por página de resposta)
-            rows = crawler.normalize_to_rows([raw_data]) # Envolver raw_data em uma lista
-            
+            if not raw_data:
+                logger.warning(f"Nenhum dado bruto retornado pela API do TJCE para {official_entity_name}.")
+                msg = f"Nenhum dado encontrado na fonte para a entidade: {official_entity_name}."
+                if count is not None:
+                    msg += f" (limite de {count} registros)"
+                return PrecatorioResponse(status="warning", message=msg, data=[], num_precatorios_found=0).dict(), 200
+
+            # A normalização agora espera uma lista de páginas
+            rows = crawler.normalize_to_rows([raw_data]) 
+            num_found = len(rows)
+
             if not rows:
-                logger.warning(f"Nenhum dado normalizado para {entity_slug}. O arquivo CSV não será gerado ou estará vazio.")
-                crawler.write_csv([], temp_csv_path) # Escreve CSV vazio com cabeçalhos
-            else:
-                crawler.write_csv(rows, temp_csv_path)
-                logger.info(f"{len(rows)} registros normalizados e salvos em {temp_csv_path} para {entity_slug}")
+                logger.info(f"Nenhum precatório normalizado para {official_entity_name} (slug: {entity_slug}).")
+                msg = f"Nenhum precatório encontrado e normalizado para a entidade: {official_entity_name}."
+                if count is not None:
+                     msg += f" (limite de {count} registros)"
+                return PrecatorioResponse(status="warning", message=msg, data=[], num_precatorios_found=0).dict(), 200
+
+            crawler.write_csv(rows, temp_csv_path)
+            logger.info(f"{num_found} registros normalizados e salvos em {temp_csv_path} para {entity_slug}")
 
             pinata_url = None
             logger.info(f"Verificando condições para upload no Pinata (Precatórios): JWT_EXISTS={bool(config.pinata_api_jwt)}, FILE_EXISTS={os.path.exists(temp_csv_path)}")
-            if config.pinata_api_jwt and os.path.exists(temp_csv_path) and (rows or not rows): # Tenta upload mesmo se vazio (com cabeçalhos)
-                logger.info(f"Tentando upload de {temp_csv_path} para Pinata como {temp_csv_filename}")
+            if config.pinata_api_jwt and os.path.exists(temp_csv_path):
+                logger.info(f"Tentando upload de {temp_csv_path} para Pinata como {csv_filename}")
                 pinata_url = upload_and_get_pinata_url(
                     local_file_path=temp_csv_path,
-                    file_name_for_pinata=temp_csv_filename, # Usa o nome do arquivo temp que já tem timestamp
+                    file_name_for_pinata=csv_filename,
                     pinata_jwt=config.pinata_api_jwt,
-                    pinata_metadata={"entity_slug": entity_slug, "type": "precatorios"}
+                    pinata_metadata={"entity_slug": entity_slug, "type": "precatorios", "count_filter": count}
                 )
                 if pinata_url:
                     logger.info(f"Upload para Pinata bem-sucedido: {pinata_url}")
                 else:
                     logger.warning(f"Falha no upload do arquivo de precatórios para o Pinata: {temp_csv_path}")
             
-            response_payload = PrecatorioResponse(
+            response_message = f"{num_found} precatório(s) encontrado(s) e processado(s) para {official_entity_name}."
+            if count is not None:
+                response_message += f" (Limite de busca: {count})"
+
+            return PrecatorioResponse(
                 status="success",
-                message=f"{len(rows) if rows else 0} precatórios encontrados e normalizados para {entity_slug}.",
-                data=rows if rows else [],
-                pinata_url=pinata_url
-            )
-            return response_payload.dict(), 200
+                message=response_message,
+                data=rows, # Alterado: Usar 'rows' diretamente, pois já são dicts serializados
+                pinata_url=pinata_url,
+                num_precatorios_found=num_found # Novo campo adicionado
+            ).dict(), 200
 
         except Exception as e:
             logger.error(f"Erro ao processar precatórios para {entity_slug}: {e}", exc_info=True)
-            # Corrigido para usar .dict() e remover count
-            return PrecatorioResponse(status="error", message=f"Erro interno: {str(e)}", data=[]).dict(), 500
+            return PrecatorioResponse(status="error", message=f"Erro interno ao processar precatórios: {str(e)}", data=[], num_precatorios_found=0).dict(), 500
         finally:
-            # Limpar o arquivo e diretório temporário
-            try:
-                if os.path.exists(temp_csv_path):
-                    os.remove(temp_csv_path)
-                os.rmdir(temp_dir) 
-                logger.info(f"Diretório temporário {temp_dir} limpo.")
-            except OSError as e_clean:
-                logger.warning(f"Erro ao limpar diretório temporário {temp_dir}: {e_clean}")
+            if os.path.exists(temp_dir):
+                try:
+                    for f_name in os.listdir(temp_dir):
+                        os.remove(os.path.join(temp_dir, f_name))
+                    os.rmdir(temp_dir)
+                    logger.info(f"Diretório temporário {temp_dir} limpo.")
+                except Exception as e_clean:
+                    logger.error(f"Erro ao limpar diretório temporário {temp_dir}: {e_clean}", exc_info=True)
 
 def cli():
     """Interface de linha de comando para o crawler"""

@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from typing import Optional, List, Any, Union
+from typing import Optional, List, Any, Union, Dict
 from pydantic import BaseModel, Field, validator
 from decimal import Decimal, InvalidOperation
 import logging
@@ -211,8 +211,9 @@ class Precatorio(BaseModel):
 class PrecatorioResponse(BaseModel):
     status: str
     message: str
-    data: Optional[List[Precatorio]] = None
+    data: Optional[List[Dict[str, Any]]] = None
     pinata_url: Optional[str] = None
+    num_precatorios_found: int = 0
 
     class Config:
         json_encoders = {

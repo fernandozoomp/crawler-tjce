@@ -765,7 +765,7 @@ class PrecatoriosCrawler:
                                 f"Página {page_index}, Linha {i}: Linha base anterior não processada. Pulando linha delta."
                             )
                             continue
-                        
+
                         pydantic_input_row = last_processed_pydantic_row.copy()
                         current_c_values = raw_row_data_container.get("C", [])
                         # rulifier_r = raw_row_data_container.get("R") # Rulifier R não será usado para os campos principais abaixo
@@ -844,7 +844,7 @@ class PrecatoriosCrawler:
                         except Exception as e_delta_override:
                             logger.error(f"Erro no processamento direto de campos delta para linha {i} pag {page_index}: {str(e_delta_override)[:200]}", exc_info=False)
                             # Se houver erro aqui, pydantic_input_row permanece como cópia da anterior para esta iteração.
-                        
+
                         last_processed_pydantic_row = pydantic_input_row.copy()
 
                     # Após processar a linha (seja base ou delta), validar e adicionar

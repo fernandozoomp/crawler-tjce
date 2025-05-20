@@ -7,52 +7,92 @@
     <style>
         body {
             font-family: sans-serif;
-            background-color: #ffffff;
-            margin: 20px;
+            background-color: #f0f2f5; /* Um cinza claro para o fundo geral */
+            margin: 0; /* Remover margem padrão do body */
             color: #333;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh; /* Garante que o footer fique no fim da página mesmo com pouco conteúdo */
         }
+        .header {
+            background-color: #003E52; /* Azul escuro (inspirado Bazar do Precatório) */
+            color: white;
+            padding: 15px 30px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.8em;
+        }
+
+        .container-wrapper {
+            flex: 1; /* Faz o wrapper do conteúdo principal crescer */
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+
         .container {
             max-width: 600px;
-            margin: auto;
-            padding: 20px;
-            background-color: #f9f9f9;
+            width: 100%;
+            padding: 30px;
+            background-color: #ffffff; /* Fundo branco para o conteúdo */
             border: 1px solid #ddd;
             border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.05);
+        }
+        .container h2 {
+            text-align: center;
+            color: #003E52;
+            margin-top: 0;
+            margin-bottom: 25px;
         }
         label {
             display: block;
             margin-bottom: 8px;
             font-weight: bold;
+            color: #555;
         }
         select, input[type="number"], button {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             margin-bottom: 20px;
-            border-radius: 4px;
+            border-radius: 5px;
             border: 1px solid #ccc;
-            box-sizing: border-box; /* Para incluir padding e border na largura total */
+            box-sizing: border-box; 
+        }
+        input[type="number"] {
+            appearance: textfield; /* Para navegadores baseados em WebKit/Blink para remover setas */
+            -moz-appearance: textfield; /* Para Firefox */
         }
         button {
-            background-color: #007bff;
+            background-color: #00A99D; /* Verde-água (inspirado Bazar do Precatório) */
             color: white;
             font-size: 16px;
             cursor: pointer;
             border: none;
+            transition: background-color 0.3s ease;
         }
         button:hover {
-            background-color: #0056b3;
+            background-color: #007A70; /* Tom mais escuro do verde-água */
         }
-        .loading-message, .error-message {
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status-message, .error-message { /* Unificado para status e erro */
             margin-top: 15px;
-            padding: 10px;
-            border-radius: 4px;
+            padding: 12px;
+            border-radius: 5px;
+            text-align: center;
         }
-        .loading-message {
+        .status-message { /* Para mensagens de sucesso ou informativas */
             background-color: #e7f3fe;
             border: 1px solid #d0eaff;
             color: #0c5460;
         }
-        .error-message {
+        .error-message { /* Para mensagens de erro */
             background-color: #f8d7da;
             border: 1px solid #f5c6cb;
             color: #721c24;
@@ -60,65 +100,85 @@
         .hidden {
             display: none;
         }
+        .footer {
+            background-color: #343a40; /* Cinza escuro para o footer */
+            color: #f8f9fa; /* Texto claro para o footer */
+            text-align: center;
+            padding: 15px 30px;
+            font-size: 0.9em;
+            box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Consultar Precatórios</h1>
+    <header class="header">
+        <h1>Consulta Precatórios TJCE</h1>
+    </header>
 
-        <div>
-            <label for="entity-dropdown">Selecione a Entidade:</label>
-            <select id="entity-dropdown">
-                <option value="">Carregando entidades...</option>
-            </select>
-        </div>
+    <div class="container-wrapper">
+        <div class="container">
+            <h2>Consultar Precatórios</h2>
 
-        <div>
-            <label for="count-filter">Quantidade (opcional):</label>
-            <input type="number" id="count-filter" placeholder="Deixe em branco para todos">
-        </div>
+            <div>
+                <label for="entity-dropdown">Selecione a Entidade:</label>
+                <select id="entity-dropdown">
+                    <option value="">Carregando entidades...</option>
+                </select>
+            </div>
 
-        <button id="download-csv-button">Baixar CSV de Precatórios</button>
+            <div>
+                <label for="count-filter">Quantidade (opcional):</label>
+                <input type="number" id="count-filter" placeholder="Deixe em branco para todos" min="1">
+            </div>
 
-        <div id="loading-message" class="loading-message hidden">
-            Buscando dados e preparando CSV... Por favor, aguarde.
-        </div>
-        <div id="error-message" class="error-message hidden">
-            <!-- Mensagens de erro serão inseridas aqui -->
+            <button id="search-precatorios-button">Buscar Precatórios</button>
+            <button id="download-csv-button" class="hidden" style="margin-top: 10px; background-color: #007bff;">Baixar CSV</button>
+
+            <div id="status-message" class="status-message hidden">
+                <!-- Mensagens de status/resultado da busca serão inseridas aqui -->
+            </div>
+            <div id="error-message" class="error-message hidden">
+                <!-- Mensagens de erro serão inseridas aqui -->
+            </div>
         </div>
     </div>
+
+    <footer class="footer">
+        <p>&copy; 2024-2025 Crawler TJCE. Todos os direitos reservados.</p>
+    </footer>
 
     <script>
         const entityDropdown = document.getElementById('entity-dropdown');
         const countFilterInput = document.getElementById('count-filter');
+        const searchButton = document.getElementById('search-precatorios-button');
         const downloadButton = document.getElementById('download-csv-button');
-        const loadingMessageDiv = document.getElementById('loading-message');
+        const statusMessageDiv = document.getElementById('status-message');
         const errorMessageDiv = document.getElementById('error-message');
+        let currentPinataUrl = null; // Para armazenar a URL do Pinata após a busca
 
-        function showLoading(message) {
-            loadingMessageDiv.textContent = message || 'Processando...';
-            loadingMessageDiv.classList.remove('hidden');
+        function showStatus(message, isError = false) {
+            const divToShow = isError ? errorMessageDiv : statusMessageDiv;
+            const divToHide = isError ? statusMessageDiv : errorMessageDiv;
+            
+            divToShow.textContent = message;
+            divToShow.classList.remove('hidden');
+            divToHide.classList.add('hidden');
+        }
+
+        function hideMessages() {
+            statusMessageDiv.classList.add('hidden');
             errorMessageDiv.classList.add('hidden');
-            downloadButton.disabled = true;
-        }
-
-        function hideLoading() {
-            loadingMessageDiv.classList.add('hidden');
-            downloadButton.disabled = false;
-        }
-
-        function showError(message) {
-            errorMessageDiv.textContent = message;
-            errorMessageDiv.classList.remove('hidden');
-            hideLoading();
         }
         
         async function populateEntities() {
+            showStatus('Carregando entidades...');
+            entityDropdown.disabled = true;
+            searchButton.disabled = true;
             try {
-                entityDropdown.disabled = true;
                 const response = await fetch('/api/entities');
                 if (!response.ok) {
-                    throw new Error(`Erro HTTP: ${response.status}`);
+                    const errorData = await response.json().catch(() => ({ message: `Erro HTTP: ${response.status}` }));
+                    throw new Error(errorData.message || `Erro HTTP: ${response.status}`);
                 }
                 const result = await response.json();
 
@@ -130,27 +190,25 @@
                         option.textContent = entity.official_name;
                         entityDropdown.appendChild(option);
                     });
-                    if (result.pinata_url) {
-                        console.log("CSV de entidades disponível em:", result.pinata_url);
-                        // Poderia adicionar um link para o CSV de entidades aqui, se desejado.
-                    }
+                    hideMessages(); // Limpa "Carregando entidades..."
                 } else {
-                    showError(result.message || 'Não foi possível carregar as entidades.');
+                    showStatus(result.message || 'Não foi possível carregar as entidades.', true);
                 }
             } catch (error) {
                 console.error('Erro ao buscar entidades:', error);
-                showError('Falha ao conectar com a API para buscar entidades. Verifique o console.');
+                showStatus(`Falha ao carregar entidades: ${error.message}. Verifique o console.`, true);
             } finally {
                 entityDropdown.disabled = false;
+                searchButton.disabled = false;
             }
         }
 
-        downloadButton.addEventListener('click', async () => {
+        searchButton.addEventListener('click', async () => {
             const entitySlug = entityDropdown.value;
             const count = countFilterInput.value;
 
             if (!entitySlug) {
-                showError('Por favor, selecione uma entidade.');
+                showStatus('Por favor, selecione uma entidade.', true);
                 return;
             }
 
@@ -159,33 +217,74 @@
                 fetchUrl += `&count=${parseInt(count)}`;
             }
 
-            showLoading('Buscando dados dos precatórios e preparando o CSV...');
+            showStatus('Buscando dados dos precatórios...');
+            searchButton.disabled = true;
+            downloadButton.classList.add('hidden'); // Esconde o botão de download durante nova busca
+            currentPinataUrl = null;
             
             try {
                 const response = await fetch(fetchUrl);
+                const result = await response.json(); // Tenta parsear JSON mesmo em erro para pegar msg da API
+                
                 if (!response.ok) {
-                     const errorData = await response.json().catch(() => ({ message: `Erro HTTP: ${response.status}` }));
-                    throw new Error(errorData.message || `Erro HTTP: ${response.status}`);
+                    throw new Error(result.message || `Erro HTTP: ${response.status} ao buscar precatórios.`);
                 }
-                const result = await response.json();
 
-                hideLoading();
+                // num_precatorios_found é o que vem da API
+                // Garante que numRecords seja um número, tratando null e undefined como 0.
+                const numRecords = Number(result.num_precatorios_found) || 0;
 
-                if (result.status === 'success' && result.pinata_url) {
-                    // Redireciona para a URL do Pinata para download
-                    window.location.href = result.pinata_url;
-                } else if (result.status === 'warning' && result.message && result.message.includes("Nenhum dado encontrado")) {
-                    showError('Nenhum dado encontrado para esta entidade e filtros.');
-                } else {
-                    showError(result.message || 'Erro ao buscar precatórios ou URL do Pinata não encontrada.');
+                if (result.status === 'success' || (result.status === 'warning' && result.message && result.message.includes("Nenhum dado encontrado"))) {
+                    if (numRecords > 0 && result.pinata_url) {
+                        showStatus(`${numRecords} precatório(s) encontrado(s) para ${entityDropdown.options[entityDropdown.selectedIndex].text}. Clique em 'Baixar CSV' para fazer o download.`);
+                        currentPinataUrl = result.pinata_url;
+                        downloadButton.classList.remove('hidden');
+                    } else if (numRecords === 0) {
+                         showStatus(`Nenhum precatório encontrado para ${entityDropdown.options[entityDropdown.selectedIndex].text} com os filtros aplicados.`);
+                         downloadButton.classList.add('hidden'); // Garante que o botão de download fique escondido
+                         currentPinataUrl = null;
+                    } else if (result.pinata_url) { 
+                        // Este caso é para quando numRecords pode não ser > 0 (ex: undefined se a API não enviar num_precatorios_found)
+                        // mas ainda temos uma URL. Priorizamos a contagem se disponível.
+                        const countText = result.num_precatorios_found !== undefined ? `${result.num_precatorios_found} precatório(s) encontrado(s)` : "Dados encontrados";
+                        showStatus(`${countText} para ${entityDropdown.options[entityDropdown.selectedIndex].text}. Clique em 'Baixar CSV' para fazer o download.`);
+                        currentPinataUrl = result.pinata_url;
+                        downloadButton.classList.remove('hidden');
+                    } else {
+                        // Caso geral onde não há URL ou a busca falhou de outra forma mas não lançou exceção HTTP
+                        showStatus(result.message || 'Busca concluída, mas sem URL para download ou número de registros claro.', true);
+                        downloadButton.classList.add('hidden');
+                        currentPinataUrl = null;
+                    }
+                } else { // Outros status de erro da API que não foram 'success' ou 'warning' com 'Nenhum dado'
+                    showStatus(result.message || 'Erro ao buscar precatórios.', true);
+                    downloadButton.classList.add('hidden');
+                    currentPinataUrl = null;
                 }
             } catch (error) {
                 console.error('Erro na requisição para /api/fetch:', error);
-                showError(`Ocorreu um erro: ${error.message}. Verifique o console.`);
+                showStatus(`Ocorreu um erro: ${error.message}. Verifique o console.`, true);
+            } finally {
+                searchButton.disabled = false;
             }
         });
 
-        // Popula as entidades ao carregar a página
+        downloadButton.addEventListener('click', () => {
+            if (currentPinataUrl) {
+                window.location.href = currentPinataUrl;
+            } else {
+                showStatus('Nenhuma URL de download disponível. Realize uma busca primeiro.', true);
+            }
+        });
+        
+        entityDropdown.addEventListener('change', () => {
+            // Quando a entidade muda, esconde mensagens e o botão de download,
+            // pois o resultado anterior não é mais válido para a nova seleção.
+            hideMessages();
+            downloadButton.classList.add('hidden');
+            currentPinataUrl = null;
+        });
+
         window.onload = populateEntities;
     </script>
 </body>
