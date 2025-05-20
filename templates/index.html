@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Precatórios TJCE</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #ffffff;
+            margin: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        select, input[type="number"], button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            box-sizing: border-box; /* Para incluir padding e border na largura total */
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .loading-message, .error-message {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .loading-message {
+            background-color: #e7f3fe;
+            border: 1px solid #d0eaff;
+            color: #0c5460;
+        }
+        .error-message {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Consultar Precatórios</h1>
+
+        <div>
+            <label for="entity-dropdown">Selecione a Entidade:</label>
+            <select id="entity-dropdown">
+                <option value="">Carregando entidades...</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="count-filter">Quantidade (opcional):</label>
+            <input type="number" id="count-filter" placeholder="Deixe em branco para todos">
+        </div>
+
+        <button id="download-csv-button">Baixar CSV de Precatórios</button>
+
+        <div id="loading-message" class="loading-message hidden">
+            Buscando dados e preparando CSV... Por favor, aguarde.
+        </div>
+        <div id="error-message" class="error-message hidden">
+            <!-- Mensagens de erro serão inseridas aqui -->
+        </div>
+    </div>
+
+    <script>
+        const entityDropdown = document.getElementById('entity-dropdown');
+        const countFilterInput = document.getElementById('count-filter');
+        const downloadButton = document.getElementById('download-csv-button');
+        const loadingMessageDiv = document.getElementById('loading-message');
+        const errorMessageDiv = document.getElementById('error-message');
+
+        function showLoading(message) {
+            loadingMessageDiv.textContent = message || 'Processando...';
+            loadingMessageDiv.classList.remove('hidden');
+            errorMessageDiv.classList.add('hidden');
+            downloadButton.disabled = true;
+        }
+
+        function hideLoading() {
+            loadingMessageDiv.classList.add('hidden');
+            downloadButton.disabled = false;
+        }
+
+        function showError(message) {
+            errorMessageDiv.textContent = message;
+            errorMessageDiv.classList.remove('hidden');
+            hideLoading();
+        }
+        
+        async function populateEntities() {
+            try {
+                entityDropdown.disabled = true;
+                const response = await fetch('/api/entities');
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP: ${response.status}`);
+                }
+                const result = await response.json();
+
+                if (result.status === 'success' && result.data) {
+                    entityDropdown.innerHTML = '<option value="">Selecione uma entidade</option>';
+                    result.data.forEach(entity => {
+                        const option = document.createElement('option');
+                        option.value = entity.slug;
+                        option.textContent = entity.official_name;
+                        entityDropdown.appendChild(option);
+                    });
+                    if (result.pinata_url) {
+                        console.log("CSV de entidades disponível em:", result.pinata_url);
+                        // Poderia adicionar um link para o CSV de entidades aqui, se desejado.
+                    }
+                } else {
+                    showError(result.message || 'Não foi possível carregar as entidades.');
+                }
+            } catch (error) {
+                console.error('Erro ao buscar entidades:', error);
+                showError('Falha ao conectar com a API para buscar entidades. Verifique o console.');
+            } finally {
+                entityDropdown.disabled = false;
+            }
+        }
+
+        downloadButton.addEventListener('click', async () => {
+            const entitySlug = entityDropdown.value;
+            const count = countFilterInput.value;
+
+            if (!entitySlug) {
+                showError('Por favor, selecione uma entidade.');
+                return;
+            }
+
+            let fetchUrl = `/api/fetch?entity=${encodeURIComponent(entitySlug)}`;
+            if (count && parseInt(count) > 0) {
+                fetchUrl += `&count=${parseInt(count)}`;
+            }
+
+            showLoading('Buscando dados dos precatórios e preparando o CSV...');
+            
+            try {
+                const response = await fetch(fetchUrl);
+                if (!response.ok) {
+                     const errorData = await response.json().catch(() => ({ message: `Erro HTTP: ${response.status}` }));
+                    throw new Error(errorData.message || `Erro HTTP: ${response.status}`);
+                }
+                const result = await response.json();
+
+                hideLoading();
+
+                if (result.status === 'success' && result.pinata_url) {
+                    // Redireciona para a URL do Pinata para download
+                    window.location.href = result.pinata_url;
+                } else if (result.status === 'warning' && result.message && result.message.includes("Nenhum dado encontrado")) {
+                    showError('Nenhum dado encontrado para esta entidade e filtros.');
+                } else {
+                    showError(result.message || 'Erro ao buscar precatórios ou URL do Pinata não encontrada.');
+                }
+            } catch (error) {
+                console.error('Erro na requisição para /api/fetch:', error);
+                showError(`Ocorreu um erro: ${error.message}. Verifique o console.`);
+            }
+        });
+
+        // Popula as entidades ao carregar a página
+        window.onload = populateEntities;
+    </script>
+</body>
+</html> 

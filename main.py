@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template
 from flask_restx import Api, Resource, fields
 from flask_caching import Cache
 from flask_limiter import Limiter
@@ -31,6 +31,14 @@ logger = get_logger(__name__)
 
 # Configuração da API
 app = Flask(__name__)
+
+# Rota para a página inicial (definida ANTES da inicialização do Flask-RESTX Api)
+@app.route('/')
+def home():
+    """Serve a página inicial."""
+    logger.info("Servindo página inicial (index.html)")
+    return render_template('index.html')
+
 app.config["JSON_AS_ASCII"] = False  # Permite caracteres UTF-8 no JSON
 app.config["RESTX_JSON"] = {
     "ensure_ascii": False
@@ -55,13 +63,13 @@ compress.init_app(app)
 api = Api(
     app,
     version="1.0",
-    title="API de Precatórios",
-    description="API para busca de precatórios do TJCE",
-    doc='/api/docs',
+    title="Crawler TJCE - Precatorios",
+    description="API para consulta e extração de dados de precatórios do Tribunal de Justiça do Estado do Ceará (TJCE). Permite listar entidades, buscar precatórios por entidade e obter os dados em formato CSV via Pinata.",
+    doc='/docs',
 )
 
 # Criação do namespace
-ns = api.namespace("api", description="Operações da API de Precatórios")
+ns = api.namespace("api", description="Operações da API de Precatórios do TJCE")
 
 # Configuração do cache
 cache = Cache(app)
@@ -167,7 +175,7 @@ def sort_rows(
 class HealthCheck(Resource):
     @api.marshal_with(health_model_fields)
     def get(self):
-        """Verifica a saúde da aplicação."""
+        """Verifica a saúde e disponibilidade da API."""
         logger.info("Health check endpoint chamado.")
         return HealthCheckResponse(status="OK", message="API está operacional")
 
@@ -177,7 +185,7 @@ class Entidades(Resource):
     @limiter.limit(config.rate_limit_entities)
     @api.marshal_with(entity_model_response_fields)
     def get(self):
-        """Lista todas as entidades disponíveis para consulta de precatórios."""
+        """Lista todas as entidades devedoras disponíveis para consulta de precatórios e fornece um CSV com os dados via Pinata."""
         logger.info("Endpoint /entities chamado")
         crawler = EntityMappingCrawler()
         output_filename = config.entities_output_filename
@@ -232,7 +240,7 @@ class FetchPrecatorios(Resource):
     @api.expect(fetch_query_model_fields)
     @api.marshal_with(precatorio_response_model_fields) 
     def get(self):
-        """Busca e normaliza precatórios para uma entidade específica."""
+        """Busca precatórios para uma entidade devedora específica e fornece um CSV com os dados via Pinata. Permite limitar a quantidade de registros."""
         args = request.args
         entity_slug = args.get('entity')
         count_str = args.get('count')
