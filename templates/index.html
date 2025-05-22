@@ -188,6 +188,31 @@
             background-color: #e2e6ea;
         }
 
+        /* Estilos para o toast de feedback de cópia */
+        #copy-feedback-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #28a745; /* Verde para sucesso */
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s, transform 0.5s;
+            transform: translateY(20px); /* Começa um pouco abaixo */
+        }
+        #copy-feedback-toast.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0); /* Move para a posição final */
+        }
+        #copy-feedback-toast.error {
+            background-color: #dc3545; /* Vermelho para erro */
+        }
+
         .footer {
             background-color: #343a40; /* Cinza escuro para o footer */
             color: #f8f9fa; /* Texto claro para o footer */
@@ -254,6 +279,9 @@
         <p>&copy; 2025 Crawler TJCE</p>
     </footer>
 
+    <!-- Toast de Feedback de Cópia -->
+    <div id="copy-feedback-toast"></div>
+
     <script>
         const entityDropdown = document.getElementById('entity-dropdown');
         const searchButton = document.getElementById('search-precatorios-button');
@@ -267,6 +295,7 @@
         const copyDataButton = document.getElementById('copy-data-button');
         const downloadCsvButtonTable = document.getElementById('download-csv-button-table');
         const filterProcessoInput = document.getElementById('filter-processo-input'); // Novo input
+        const copyFeedbackToast = document.getElementById('copy-feedback-toast'); // Toast element
 
         let currentPinataUrl = null; 
         let currentTableData = []; // Para armazenar os dados da tabela atual
@@ -456,20 +485,68 @@
         
         copyDataButton.addEventListener('click', () => {
             if (currentTableData && currentTableData.length > 0) {
-                // Manter a mesma ordem de cabeçalhos para a cópia (ORDEM primeiro)
-                const headers = ['ORDEM', 'PROCESSO', 'ANO ORÇAMENTO', 'NATUREZA', 'DATA CADASTRO', 'TIPO CLASSIFICAÇÃO', 'VALOR ORIGINAL', 'VALOR ATUAL', 'SITUAÇÃO'];
-                const fieldMapping = {
-                    'ORDEM': 'ordem', 
-                    'PROCESSO': 'processo', 'ANO ORÇAMENTO': 'ano_orcamento', 'NATUREZA': 'natureza', 
-                    'DATA CADASTRO': 'data_cadastro', 'TIPO CLASSIFICAÇÃO': 'tipo_classificacao', 
-                    'VALOR ORIGINAL': 'valor_original', 'VALOR ATUAL': 'valor_atual', 'SITUAÇÃO': 'situacao'
+                // Cabeçalhos e mapeamento para a cópia, conforme o formato desejado
+                const headersForCopy = [
+                    'Ord.', 'No. Processo Precatório', 'Comarca', 'Ano Orçamento', 
+                    'Natureza', 'Data Cadastro', 'Tipo de Classificação', 
+                    'Valor Original', 'Valor Atual', 'Situação'
+                ];
+                const fieldMappingForCopy = {
+                    'Ord.': 'ordem',
+                    'No. Processo Precatório': 'processo',
+                    'Comarca': 'comarca', // Adicionado Comarca
+                    'Ano Orçamento': 'ano_orcamento',
+                    'Natureza': 'natureza',
+                    'Data Cadastro': 'data_cadastro',
+                    'Tipo de Classificação': 'tipo_classificacao',
+                    'Valor Original': 'valor_original',
+                    'Valor Atual': 'valor_atual',
+                    'Situação': 'situacao'
                 };
 
-                let tsvData = headers.join('\\t') + '\\n'; // Cabeçalhos
+                // Função helper para formatar moeda
+                function formatCurrencyForCopy(value) {
+                    if (value === null || value === undefined || String(value).trim() === '-' || String(value).trim() === '') {
+                        return '-';
+                    }
+                    let sValue = String(value);
+                    let num;
+
+                    // 1. Tenta remover caracteres de formatação comuns (R$, espaços) e depois converter.
+                    //    Preserva o ponto como potencial decimal e a vírgula para tratamento posterior.
+                    let cleanedForParse = sValue.replace(/R\$\s?/g, '').replace(/\s/g, '');
+
+                    // 2. Heurística para formato brasileiro (ex: 1.234,56 ou 1234,56)
+                    if (cleanedForParse.includes(',')) {
+                        // Se tem vírgula, assume que é decimal pt-BR. Remove pontos de milhar, troca vírgula por ponto.
+                        num = parseFloat(cleanedForParse.replace(/\./g, '').replace(',', '.'));
+                    } else {
+                        // Se não tem vírgula, assume que ponto é decimal (ex: 1234.56 ou 1234)
+                        num = parseFloat(cleanedForParse); // cleanedForParse já não tem espaços
+                    }
+
+                    if (isNaN(num)) {
+                        return String(value); // Retorna o original se a conversão falhar
+                    }
+
+                    try {
+                        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+                    } catch (e) {
+                        const parts = num.toFixed(2).split('.');
+                        parts[0] = parts[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.');
+                        return 'R$ ' + parts.join(',');
+                    }
+                }
+
+                const TAB = String.fromCharCode(9); // Caractere de Tabulação
+                const NEWLINE = String.fromCharCode(10); // Caractere de Nova Linha (LF)
+
+                let tsvData = headersForCopy.join(TAB) + NEWLINE; 
                 currentTableData.forEach(item => {
-                    const rowValues = headers.map(header => {
-                        const fieldKey = fieldMapping[header];
+                    const rowValues = headersForCopy.map(header => {
+                        const fieldKey = fieldMappingForCopy[header];
                         let cellValue = item[fieldKey] !== undefined && item[fieldKey] !== null ? item[fieldKey] : '-';
+                        
                         if (fieldKey === 'data_cadastro' && cellValue !== '-') {
                              try {
                                 const dateObj = new Date(cellValue);
@@ -477,22 +554,39 @@
                                     cellValue = dateObj.toLocaleDateString('pt-BR');
                                 }
                             } catch (e) { /* usa original */ }
+                        } else if (fieldKey === 'valor_original' || fieldKey === 'valor_atual') {
+                            cellValue = formatCurrencyForCopy(cellValue);
                         }
-                        return String(cellValue).replace(/\\n/g, ' '); // Remove quebras de linha e converte para string
+                        // Remove quaisquer quebras de linha preexistentes dentro de uma célula
+                        return String(cellValue).replace(/\r?\n|\r/g, ' '); 
                     });
-                    tsvData += rowValues.join('\\t') + '\\n';
+                    tsvData += rowValues.join(TAB) + NEWLINE;
                 });
 
                 navigator.clipboard.writeText(tsvData).then(() => {
-                    showStatus('Dados da tabela copiados para a área de transferência!', false, true);
+                    showCopyFeedback('Dados copiados com sucesso!');
                 }).catch(err => {
                     console.error('Erro ao copiar dados da tabela: ', err);
-                    showStatus('Falha ao copiar dados. Verifique as permissões do navegador.', true);
+                    showCopyFeedback('Falha ao copiar dados.', true);
                 });
             } else {
-                showStatus('Não há dados na tabela para copiar.', true);
+                showCopyFeedback('Não há dados para copiar.', true);
             }
         });
+        
+        function showCopyFeedback(message, isError = false) {
+            copyFeedbackToast.textContent = message;
+            copyFeedbackToast.className = 'show'; // Adiciona 'show' para ativar transição e visibilidade
+            if (isError) {
+                copyFeedbackToast.classList.add('error');
+            } else {
+                copyFeedbackToast.classList.remove('error');
+            }
+
+            setTimeout(() => {
+                copyFeedbackToast.className = ''; // Remove classes para esconder com transição
+            }, 2000); // Esconde após 2 segundos
+        }
         
         entityDropdown.addEventListener('change', () => {
             hideMessages();
