@@ -359,20 +359,28 @@ class FetchPrecatorios(Resource):
         entity_slug = args.get("entity")
         count_str = args.get("count")
 
-        count = None
+        # Define o valor padrão para count se não for fornecido ou for inválido
+        DEFAULT_COUNT = 500
+        count = DEFAULT_COUNT
+
         if count_str:
             try:
-                count = int(count_str)
-                if count <= 0:
+                parsed_count = int(count_str)
+                if parsed_count > 0:
+                    count = parsed_count
+                else:
                     logger.warning(
-                        f"Valor de 'count' inválido: {count_str}. Ignorando."
+                        f"Valor de 'count' inválido fornecido: {count_str}. Usando default: {DEFAULT_COUNT}."
                     )
-                    count = None  # Trata count <= 0 como "todos"
+                    # count já é DEFAULT_COUNT, então não precisa reatribuir
             except ValueError:
                 logger.warning(
-                    f"Valor de 'count' não é um inteiro válido: {count_str}. Ignorando."
+                    f"Valor de 'count' não é um inteiro válido: {count_str}. Usando default: {DEFAULT_COUNT}."
                 )
-                # Mantém count como None
+                # count já é DEFAULT_COUNT
+        else:
+            logger.info(f"Nenhum 'count' fornecido. Usando default: {DEFAULT_COUNT}")
+            # count já é DEFAULT_COUNT
 
         if not entity_slug:
             logger.error("Parâmetro 'entity' ausente na requisição /api/fetch.")

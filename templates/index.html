@@ -15,7 +15,7 @@
             min-height: 100vh; /* Garante que o footer fique no fim da página mesmo com pouco conteúdo */
         }
         .header {
-            background-color: #003E52; /* Azul escuro (inspirado Bazar do Precatório) */
+            background-color: #001f3f; /* Azul Marinho Clássico */
             color: white;
             padding: 15px 30px;
             text-align: center;
@@ -34,8 +34,8 @@
         }
 
         .container {
-            max-width: 600px;
-            width: 100%;
+            max-width: 90%; /* Aumentar para acomodar a tabela */
+            width: 1000px; /* Largura base para a tabela */
             padding: 30px;
             background-color: #ffffff; /* Fundo branco para o conteúdo */
             border: 1px solid #ddd;
@@ -44,7 +44,7 @@
         }
         .container h2 {
             text-align: center;
-            color: #003E52;
+            color: #001f3f; /* Azul Marinho Clássico */
             margin-top: 0;
             margin-bottom: 25px;
         }
@@ -54,7 +54,7 @@
             font-weight: bold;
             color: #555;
         }
-        select, input[type="number"], button {
+        select, input[type="number"], button, .filter-container input[type=\"text\"] {
             width: 100%;
             padding: 12px;
             margin-bottom: 20px;
@@ -66,16 +66,23 @@
             appearance: textfield; /* Para navegadores baseados em WebKit/Blink para remover setas */
             -moz-appearance: textfield; /* Para Firefox */
         }
-        button {
-            background-color: #00A99D; /* Verde-água (inspirado Bazar do Precatório) */
+        button#search-precatorios-button { 
+            background-color: #0056b3; /* Azul mais escuro e discreto */
             color: white;
             font-size: 16px;
             cursor: pointer;
             border: none;
             transition: background-color 0.3s ease;
+            width: auto; /* Ajusta a largura ao conteúdo */
+            display: block; /* Necessário para margin auto funcionar */
+            margin-left: auto; /* Centraliza o botão */
+            margin-right: auto; /* Centraliza o botão */
+            padding-left: 100px; /* Espaçamento interno horizontal */
+            padding-right: 100px; /* Espaçamento interno horizontal */
+            /* O padding vertical (12px) e margin-bottom (20px) vêm da regra geral de button */
         }
-        button:hover {
-            background-color: #007A70; /* Tom mais escuro do verde-água */
+        button#search-precatorios-button:hover {
+            background-color: #004085; /* Tom ainda mais escuro para hover */
         }
         button:disabled {
             background-color: #ccc;
@@ -100,6 +107,87 @@
         .hidden {
             display: none;
         }
+
+        /* Estilos para a seção de resultados da tabela */
+        .results-container {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            border-radius: 8px;
+        }
+        .results-container h3 {
+            color: #003E52;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        .filter-container {
+            margin-bottom: 15px;
+        }
+        .filter-container label {
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        .filter-container input[type=\"text\"] {
+            padding: 8px 10px;
+            font-size: 0.95em;
+            margin-bottom: 0; /* Remover margem inferior se estiver dentro de .filter-container com mb */
+        }
+        .results-actions {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px; /* Espaço entre os botões */
+        }
+        .results-actions button {
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+            width: auto; 
+            padding: 10px 15px;
+        }
+        #copy-data-button {
+            background-color: #6c757d; /* Cinza Médio */
+        }
+        #copy-data-button:hover {
+            background-color: #545b62; /* Tom mais escuro */
+        }
+        #download-csv-button-table {
+            background-color: #5bc0de; /* Azul Céu mais claro */
+        }
+        #download-csv-button-table:hover {
+            background-color: #31b0d5; /* Tom mais escuro */
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto; /* Permite rolagem horizontal */
+            -webkit-overflow-scrolling: touch; /* Rolagem suave em iOS */
+        }
+        #precatorios-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        #precatorios-table th, #precatorios-table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            white-space: nowrap; /* Evita quebra de linha no conteúdo da célula */
+        }
+        #precatorios-table th {
+            background-color: #e9ecef;
+            color: #495057;
+            font-weight: bold;
+        }
+        #precatorios-table tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        #precatorios-table tbody tr:hover {
+            background-color: #e2e6ea;
+        }
+
         .footer {
             background-color: #343a40; /* Cinza escuro para o footer */
             color: #f8f9fa; /* Texto claro para o footer */
@@ -112,12 +200,11 @@
 </head>
 <body>
     <header class="header">
-        <h1>Consulta Precatórios TJCE</h1>
+        <h1>Consulta Precatórios - TJCE</h1>
     </header>
 
     <div class="container-wrapper">
         <div class="container">
-            <h2>Consultar Precatórios</h2>
 
             <div>
                 <label for="entity-dropdown">Selecione a Entidade:</label>
@@ -126,13 +213,8 @@
                 </select>
             </div>
 
-            <div>
-                <label for="count-filter">Quantidade (opcional):</label>
-                <input type="number" id="count-filter" placeholder="Deixe em branco para todos" min="1">
-            </div>
-
-            <button id="search-precatorios-button">Buscar Precatórios</button>
-            <button id="download-csv-button" class="hidden" style="margin-top: 10px; background-color: #007bff;">Baixar CSV</button>
+            <button id="search-precatorios-button">Buscar</button>
+            <!-- Botão de download original removido daqui, será adicionado dentro da results-container -->
 
             <div id="status-message" class="status-message hidden">
                 <!-- Mensagens de status/resultado da busca serão inseridas aqui -->
@@ -140,29 +222,66 @@
             <div id="error-message" class="error-message hidden">
                 <!-- Mensagens de erro serão inseridas aqui -->
             </div>
+
+            <!-- Nova seção para resultados em tabela -->
+            <div id="results-container" class="results-container hidden">
+                <h3 id="results-title">Precatórios Encontrados</h3>
+                
+                <div class="filter-container">
+                    <label for="filter-processo-input">Filtrar por Nº do Processo:</label>
+                    <input type="text" id="filter-processo-input" placeholder="Digite para filtrar...">
+                </div>
+
+                <div class="results-actions">
+                    <button id="copy-data-button">Copiar Dados</button>
+                    <button id="download-csv-button-table">Exportar CSV</button>
+                </div>
+                <div class="table-responsive">
+                    <table id="precatorios-table">
+                        <thead>
+                            <!-- Cabeçalhos serão inseridos via JS -->
+                        </thead>
+                        <tbody>
+                            <!-- Linhas de dados serão inseridas via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
     <footer class="footer">
-        <p>&copy; 2024-2025 Crawler TJCE. Todos os direitos reservados.</p>
+        <p>&copy; 2025 Crawler TJCE</p>
     </footer>
 
     <script>
         const entityDropdown = document.getElementById('entity-dropdown');
-        const countFilterInput = document.getElementById('count-filter');
         const searchButton = document.getElementById('search-precatorios-button');
-        const downloadButton = document.getElementById('download-csv-button');
+        // const downloadButton = document.getElementById('download-csv-button'); // Original, não mais usado diretamente
         const statusMessageDiv = document.getElementById('status-message');
         const errorMessageDiv = document.getElementById('error-message');
-        let currentPinataUrl = null; // Para armazenar a URL do Pinata após a busca
+        
+        const resultsContainer = document.getElementById('results-container');
+        const resultsTitle = document.getElementById('results-title');
+        const precatoriosTable = document.getElementById('precatorios-table');
+        const copyDataButton = document.getElementById('copy-data-button');
+        const downloadCsvButtonTable = document.getElementById('download-csv-button-table');
+        const filterProcessoInput = document.getElementById('filter-processo-input'); // Novo input
 
-        function showStatus(message, isError = false) {
+        let currentPinataUrl = null; 
+        let currentTableData = []; // Para armazenar os dados da tabela atual
+
+        function showStatus(message, isError = false, isSuccessForTable = false) {
             const divToShow = isError ? errorMessageDiv : statusMessageDiv;
             const divToHide = isError ? statusMessageDiv : errorMessageDiv;
             
             divToShow.textContent = message;
             divToShow.classList.remove('hidden');
             divToHide.classList.add('hidden');
+
+            if (isSuccessForTable) { // Se for sucesso relacionado à tabela, pode não precisar mostrar o status-message principal
+                statusMessageDiv.classList.add('hidden');
+            }
         }
 
         function hideMessages() {
@@ -171,101 +290,163 @@
         }
         
         function populateEntities() {
-            // A lista de entidades agora vem do servidor Flask/Jinja2
             const entitiesFromServer = {{ entities_list | tojson | safe }};
-
             entityDropdown.disabled = true;
             searchButton.disabled = true;
 
             if (entitiesFromServer && entitiesFromServer.length > 0) {
-                entityDropdown.innerHTML = '<option value="">Selecione uma entidade</option>'; // Adiciona a opção default
+                entityDropdown.innerHTML = '<option value="">Selecione uma entidade</option>';
                 entitiesFromServer.forEach(entity => {
                     const option = document.createElement('option');
                     option.value = entity.slug;
                     option.textContent = entity.official_name;
                     entityDropdown.appendChild(option);
                 });
-                hideMessages(); // Limpa qualquer mensagem de "Carregando"
+                hideMessages(); 
             } else {
                 entityDropdown.innerHTML = '<option value="">Nenhuma entidade disponível</option>';
                 showStatus('Nenhuma entidade encontrada para carregar no dropdown.', true);
-                // Mantém o botão de busca desabilitado se não há entidades
                 searchButton.disabled = true; 
             }
             entityDropdown.disabled = false;
-            // Só habilita o botão de busca se houver entidades
             if (entitiesFromServer && entitiesFromServer.length > 0) {
                  searchButton.disabled = false;
             }
         }
 
+        function displayPrecatoriosTable(data, entityName) {
+            const tableHead = precatoriosTable.querySelector('thead');
+            const tableBody = precatoriosTable.querySelector('tbody');
+
+            tableHead.innerHTML = ''; // Limpa cabeçalho
+            tableBody.innerHTML = ''; // Limpa corpo
+
+            if (!data || data.length === 0) {
+                resultsTitle.textContent = `Nenhum precatório encontrado para ${entityName}`;
+                resultsContainer.classList.remove('hidden');
+                downloadCsvButtonTable.classList.add('hidden');
+                copyDataButton.disabled = true;
+                filterProcessoInput.value = ''; // Limpa filtro
+                filterProcessoInput.disabled = true; // Desabilita filtro
+                currentTableData = [];
+                return;
+            }
+
+            currentTableData = data; // Armazena os dados para cópia
+
+            resultsTitle.textContent = `Precatórios: ${entityName} (${data.length})`;
+
+            // Define os cabeçalhos da tabela (ordem como na imagem, com ORDEM primeiro)
+            const headers = ['ORDEM', 'PROCESSO', 'ANO ORÇAMENTO', 'NATUREZA', 'DATA CADASTRO', 'TIPO CLASSIFICAÇÃO', 'VALOR ORIGINAL', 'VALOR ATUAL', 'SITUAÇÃO'];
+            const headerRow = document.createElement('tr');
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText;
+                headerRow.appendChild(th);
+            });
+            tableHead.appendChild(headerRow);
+
+            // Mapeamento dos nomes de campo da API para os cabeçalhos (para garantir a ordem correta)
+            const fieldMapping = {
+                'ORDEM': 'ordem',
+                'PROCESSO': 'processo',
+                'ANO ORÇAMENTO': 'ano_orcamento',
+                'NATUREZA': 'natureza',
+                'DATA CADASTRO': 'data_cadastro',
+                'TIPO CLASSIFICAÇÃO': 'tipo_classificacao',
+                'VALOR ORIGINAL': 'valor_original',
+                'VALOR ATUAL': 'valor_atual',
+                'SITUAÇÃO': 'situacao'
+            };
+            
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const cell = document.createElement('td');
+                    const fieldKey = fieldMapping[header];
+                    let cellValue = item[fieldKey] !== undefined && item[fieldKey] !== null ? item[fieldKey] : '-';
+                    
+                    // Formatar data se for o campo data_cadastro
+                    if (fieldKey === 'data_cadastro' && cellValue !== '-') {
+                        try {
+                            // Tenta formatar se for uma string de data ISO ou timestamp
+                            const dateObj = new Date(cellValue);
+                            if (!isNaN(dateObj)) {
+                                cellValue = dateObj.toLocaleDateString('pt-BR');
+                            }
+                        } catch (e) { /* Mantém o valor original se não puder formatar */ }
+                    }
+                    cell.textContent = cellValue;
+                    row.appendChild(cell);
+                });
+                tableBody.appendChild(row);
+            });
+            copyDataButton.disabled = false;
+            resultsContainer.classList.remove('hidden');
+            filterProcessoInput.disabled = false; // Habilita filtro
+            filterProcessoInput.value = ''; // Garante que o filtro esteja limpo ao exibir nova tabela
+        }
+
         searchButton.addEventListener('click', async () => {
             const entitySlug = entityDropdown.value;
-            const count = countFilterInput.value;
+            const selectedEntityName = entityDropdown.options[entityDropdown.selectedIndex].text;
 
             if (!entitySlug) {
                 showStatus('Por favor, selecione uma entidade.', true);
+                resultsContainer.classList.add('hidden');
                 return;
             }
 
             let fetchUrl = `/api/fetch?entity=${encodeURIComponent(entitySlug)}`;
-            if (count && parseInt(count) > 0) {
-                fetchUrl += `&count=${parseInt(count)}`;
-            }
 
             showStatus('Buscando dados dos precatórios...');
             searchButton.disabled = true;
-            downloadButton.classList.add('hidden'); // Esconde o botão de download durante nova busca
+            resultsContainer.classList.add('hidden'); // Esconde a tabela durante nova busca
+            downloadCsvButtonTable.classList.add('hidden');
+            filterProcessoInput.value = ''; // Limpa o filtro ao iniciar nova busca
+            filterProcessoInput.disabled = true; // Desabilita enquanto busca
             currentPinataUrl = null;
+            currentTableData = [];
             
             try {
                 const response = await fetch(fetchUrl);
-                const result = await response.json(); // Tenta parsear JSON mesmo em erro para pegar msg da API
+                const result = await response.json();
                 
                 if (!response.ok) {
-                    throw new Error(result.message || `Erro HTTP: ${response.status} ao buscar precatórios.`);
+                    throw new Error(result.message || `Erro HTTP: ${response.status}`);
                 }
 
-                // num_precatorios_found é o que vem da API
-                // Garante que numRecords seja um número, tratando null e undefined como 0.
-                const numRecords = Number(result.num_precatorios_found) || 0;
+                if (result.status === 'success' || (result.status === 'warning' && result.data && result.data.length > 0) || (result.status === 'warning' && result.message.includes("Nenhum dado encontrado"))) {
+                    const numRecords = result.data ? result.data.length : 0;
 
-                if (result.status === 'success' || (result.status === 'warning' && result.message && result.message.includes("Nenhum dado encontrado"))) {
-                    if (numRecords > 0 && result.pinata_url) {
-                        showStatus(`${numRecords} precatório(s) encontrado(s) para ${entityDropdown.options[entityDropdown.selectedIndex].text}. Clique em 'Baixar CSV' para fazer o download.`);
-                        currentPinataUrl = result.pinata_url;
-                        downloadButton.classList.remove('hidden');
-                    } else if (numRecords === 0) {
-                         showStatus(`Nenhum precatório encontrado para ${entityDropdown.options[entityDropdown.selectedIndex].text} com os filtros aplicados.`);
-                         downloadButton.classList.add('hidden'); // Garante que o botão de download fique escondido
-                         currentPinataUrl = null;
-                    } else if (result.pinata_url) { 
-                        // Este caso é para quando numRecords pode não ser > 0 (ex: undefined se a API não enviar num_precatorios_found)
-                        // mas ainda temos uma URL. Priorizamos a contagem se disponível.
-                        const countText = result.num_precatorios_found !== undefined ? `${result.num_precatorios_found} precatório(s) encontrado(s)` : "Dados encontrados";
-                        showStatus(`${countText} para ${entityDropdown.options[entityDropdown.selectedIndex].text}. Clique em 'Baixar CSV' para fazer o download.`);
-                        currentPinataUrl = result.pinata_url;
-                        downloadButton.classList.remove('hidden');
-                    } else {
-                        // Caso geral onde não há URL ou a busca falhou de outra forma mas não lançou exceção HTTP
-                        showStatus(result.message || 'Busca concluída, mas sem URL para download ou número de registros claro.', true);
-                        downloadButton.classList.add('hidden');
-                        currentPinataUrl = null;
+                    if (numRecords > 0) {
+                        displayPrecatoriosTable(result.data, selectedEntityName);
+                        showStatus(`Exibindo ${numRecords} precatório(s) para ${selectedEntityName}.`, false, true); // true para isSuccessForTable
+                        if(result.pinata_url) {
+                            currentPinataUrl = result.pinata_url;
+                            downloadCsvButtonTable.classList.remove('hidden');
+                        } else {
+                            downloadCsvButtonTable.classList.add('hidden');
+                        }
+                    } else { // Nenhum registro encontrado
+                        displayPrecatoriosTable([], selectedEntityName); // Chama para mostrar "Nenhum precatório..."
+                        showStatus(`Nenhum precatório encontrado para ${selectedEntityName} com os filtros aplicados.`);
+                        downloadCsvButtonTable.classList.add('hidden');
                     }
-                } else { // Outros status de erro da API que não foram 'success' ou 'warning' com 'Nenhum dado'
+                } else {
                     showStatus(result.message || 'Erro ao buscar precatórios.', true);
-                    downloadButton.classList.add('hidden');
-                    currentPinataUrl = null;
+                    resultsContainer.classList.add('hidden');
                 }
             } catch (error) {
                 console.error('Erro na requisição para /api/fetch:', error);
                 showStatus(`Ocorreu um erro: ${error.message}. Verifique o console.`, true);
+                resultsContainer.classList.add('hidden');
             } finally {
                 searchButton.disabled = false;
             }
         });
 
-        downloadButton.addEventListener('click', () => {
+        downloadCsvButtonTable.addEventListener('click', () => {
             if (currentPinataUrl) {
                 window.location.href = currentPinataUrl;
             } else {
@@ -273,12 +454,72 @@
             }
         });
         
+        copyDataButton.addEventListener('click', () => {
+            if (currentTableData && currentTableData.length > 0) {
+                // Manter a mesma ordem de cabeçalhos para a cópia (ORDEM primeiro)
+                const headers = ['ORDEM', 'PROCESSO', 'ANO ORÇAMENTO', 'NATUREZA', 'DATA CADASTRO', 'TIPO CLASSIFICAÇÃO', 'VALOR ORIGINAL', 'VALOR ATUAL', 'SITUAÇÃO'];
+                const fieldMapping = {
+                    'ORDEM': 'ordem', 
+                    'PROCESSO': 'processo', 'ANO ORÇAMENTO': 'ano_orcamento', 'NATUREZA': 'natureza', 
+                    'DATA CADASTRO': 'data_cadastro', 'TIPO CLASSIFICAÇÃO': 'tipo_classificacao', 
+                    'VALOR ORIGINAL': 'valor_original', 'VALOR ATUAL': 'valor_atual', 'SITUAÇÃO': 'situacao'
+                };
+
+                let tsvData = headers.join('\\t') + '\\n'; // Cabeçalhos
+                currentTableData.forEach(item => {
+                    const rowValues = headers.map(header => {
+                        const fieldKey = fieldMapping[header];
+                        let cellValue = item[fieldKey] !== undefined && item[fieldKey] !== null ? item[fieldKey] : '-';
+                        if (fieldKey === 'data_cadastro' && cellValue !== '-') {
+                             try {
+                                const dateObj = new Date(cellValue);
+                                if (!isNaN(dateObj)) {
+                                    cellValue = dateObj.toLocaleDateString('pt-BR');
+                                }
+                            } catch (e) { /* usa original */ }
+                        }
+                        return String(cellValue).replace(/\\n/g, ' '); // Remove quebras de linha e converte para string
+                    });
+                    tsvData += rowValues.join('\\t') + '\\n';
+                });
+
+                navigator.clipboard.writeText(tsvData).then(() => {
+                    showStatus('Dados da tabela copiados para a área de transferência!', false, true);
+                }).catch(err => {
+                    console.error('Erro ao copiar dados da tabela: ', err);
+                    showStatus('Falha ao copiar dados. Verifique as permissões do navegador.', true);
+                });
+            } else {
+                showStatus('Não há dados na tabela para copiar.', true);
+            }
+        });
+        
         entityDropdown.addEventListener('change', () => {
-            // Quando a entidade muda, esconde mensagens e o botão de download,
-            // pois o resultado anterior não é mais válido para a nova seleção.
             hideMessages();
-            downloadButton.classList.add('hidden');
+            resultsContainer.classList.add('hidden'); // Esconde a tabela ao mudar entidade
+            downloadCsvButtonTable.classList.add('hidden');
             currentPinataUrl = null;
+            currentTableData = [];
+        });
+
+        // Event listener para o filtro de processo
+        filterProcessoInput.addEventListener('input', () => {
+            const filterValue = filterProcessoInput.value.toLowerCase().trim();
+            const tableBody = precatoriosTable.querySelector('tbody');
+            if (!tableBody) return;
+
+            const rows = tableBody.querySelectorAll('tr');
+            rows.forEach(row => {
+                const processoCell = row.querySelector('td:first-child'); // Nº do Processo é a primeira célula
+                if (processoCell) {
+                    const cellText = processoCell.textContent || processoCell.innerText;
+                    if (cellText.toLowerCase().includes(filterValue)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                }
+            });
         });
 
         window.onload = populateEntities;
