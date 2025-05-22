@@ -1,0 +1,18 @@
+curl 'https://wabi-brazil-south-b-primary-api.analysis.windows.net/public/reports/querydata?synchronous=true' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'ActivityId: 421ec5df-62e7-9b7b-9a67-7cdf05f5feaf' \
+  -H 'Connection: keep-alive' \
+  -H 'Content-Type: application/json;charset=UTF-8' \
+  -H 'Origin: https://app.powerbi.com' \
+  -H 'Referer: https://app.powerbi.com/' \
+  -H 'RequestId: 89cb3c2f-dff2-adc4-135e-c84f7869c802' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: cross-site' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36' \
+  -H 'X-PowerBI-ResourceKey: e8c26605-679c-4da5-80d5-423cc8062db2' \
+  -H 'sec-ch-ua: "Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  --data-raw $'{"version":"1.0.0","queries":[{"Query":{"Commands":[{"SemanticQueryDataShapeCommand":{"Query":{"Version":2,"From":[{"Name":"d","Entity":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO","Type":0}],"Select":[{"Column":{"Expression":{"SourceRef":{"Source":"d"}},"Property":"dfslcp_dsc_entidade"},"Name":"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_entidade"}]},"Binding":{"Primary":{"Groupings":[{"Projections":[0]}]},"DataReduction":{"DataVolume":3,"Primary":{"Window":{"RestartTokens":[["\'MUNICÍPIO DE TRAIRI\'"]]}}},"IncludeEmptyGroups":true,"Version":1},"ExecutionMetricsKind":1}}]},"QueryId":""}],"cancelQueries":[],"modelId":4287487}'

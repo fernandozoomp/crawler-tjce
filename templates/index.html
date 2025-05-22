@@ -170,36 +170,32 @@
             errorMessageDiv.classList.add('hidden');
         }
         
-        async function populateEntities() {
-            showStatus('Carregando entidades...');
+        function populateEntities() {
+            // A lista de entidades agora vem do servidor Flask/Jinja2
+            const entitiesFromServer = {{ entities_list | tojson | safe }};
+
             entityDropdown.disabled = true;
             searchButton.disabled = true;
-            try {
-                const response = await fetch('/api/entities');
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ message: `Erro HTTP: ${response.status}` }));
-                    throw new Error(errorData.message || `Erro HTTP: ${response.status}`);
-                }
-                const result = await response.json();
 
-                if (result.status === 'success' && result.data) {
-                    entityDropdown.innerHTML = '<option value="">Selecione uma entidade</option>';
-                    result.data.forEach(entity => {
-                        const option = document.createElement('option');
-                        option.value = entity.slug;
-                        option.textContent = entity.official_name;
-                        entityDropdown.appendChild(option);
-                    });
-                    hideMessages(); // Limpa "Carregando entidades..."
-                } else {
-                    showStatus(result.message || 'Não foi possível carregar as entidades.', true);
-                }
-            } catch (error) {
-                console.error('Erro ao buscar entidades:', error);
-                showStatus(`Falha ao carregar entidades: ${error.message}. Verifique o console.`, true);
-            } finally {
-                entityDropdown.disabled = false;
-                searchButton.disabled = false;
+            if (entitiesFromServer && entitiesFromServer.length > 0) {
+                entityDropdown.innerHTML = '<option value="">Selecione uma entidade</option>'; // Adiciona a opção default
+                entitiesFromServer.forEach(entity => {
+                    const option = document.createElement('option');
+                    option.value = entity.slug;
+                    option.textContent = entity.official_name;
+                    entityDropdown.appendChild(option);
+                });
+                hideMessages(); // Limpa qualquer mensagem de "Carregando"
+            } else {
+                entityDropdown.innerHTML = '<option value="">Nenhuma entidade disponível</option>';
+                showStatus('Nenhuma entidade encontrada para carregar no dropdown.', true);
+                // Mantém o botão de busca desabilitado se não há entidades
+                searchButton.disabled = true; 
+            }
+            entityDropdown.disabled = false;
+            // Só habilita o botão de busca se houver entidades
+            if (entitiesFromServer && entitiesFromServer.length > 0) {
+                 searchButton.disabled = false;
             }
         }
 

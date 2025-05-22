@@ -1,2 +1,14 @@
 # Variaveis de ambiente 
 .env
+
+# ambiente virtual
+venv/
+
+# arquivos de saída
+*.log
+
+# cache
+cache/
+__pycache__/
+
+
