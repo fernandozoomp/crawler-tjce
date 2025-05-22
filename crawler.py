@@ -295,8 +295,8 @@ class PrecatoriosCrawler:
 
         REQUESTS_TOTAL.labels(entity=entity).inc()
         response = self.session.post(
-            self.api_url, json=payload, headers=current_headers, timeout=90
-        )  # Timeout aumentado
+            self.api_url, json=payload, headers=current_headers, timeout=180
+        )  # Timeout aumentado para 180s
         response.raise_for_status()
         return response.json()
 
@@ -535,6 +535,7 @@ class PrecatoriosCrawler:
         current_restart_tokens: Optional[List[Any]] = None
         page_num = 0
         processed_records_for_entity = 0
+        last_order_number = 0
         batch_size = (
             count_per_page
             if count_per_page is not None
@@ -577,7 +578,12 @@ class PrecatoriosCrawler:
                     break
 
                 # A função normalize_to_rows espera uma lista de respostas de página
-                normalized_page_rows = self.normalize_to_rows([page_data_response])
+                normalized_page_rows, last_order_number_from_page = (
+                    self.normalize_to_rows(
+                        [page_data_response], starting_order_number=last_order_number
+                    )
+                )
+                last_order_number = last_order_number_from_page
 
                 if not normalized_page_rows:  # Se a normalização não retornar linhas
                     raw_data_present = bool(
@@ -674,17 +680,21 @@ class PrecatoriosCrawler:
         )
         return all_normalized_rows
 
-    def normalize_to_rows(self, resp_json_pages: List[Dict]) -> List[Dict]:
-        """Normaliza os dados JSON da API para uma lista de dicionários (linhas)."""
+    def normalize_to_rows(
+        self, resp_json_pages: List[Dict], starting_order_number: int = 0
+    ) -> Tuple[List[Dict], int]:
+        """Normaliza os dados JSON da API para uma lista de dicionários (linhas).
+        Retorna as linhas normalizadas e o último número de ordem usado.
+        """
         normalized_rows: List[Dict] = []
         total_raw_records_count = 0
-        current_order_in_normalized_list = 0  # Contador para o campo 'ordem'
+        current_order_in_normalized_list = starting_order_number
 
         if not resp_json_pages or not isinstance(resp_json_pages, list):
             logger.warning(
                 "normalize_to_rows_entrada_invalida", data=str(resp_json_pages)
             )
-            return normalized_rows
+            return normalized_rows, current_order_in_normalized_list
 
         for page_index, resp_json in enumerate(resp_json_pages):
             if not resp_json or not isinstance(resp_json, dict):
@@ -801,7 +811,8 @@ class PrecatoriosCrawler:
 
                         if len(current_c_values) != len(s_schema):
                             logger.error(
-                                f"Pág{page_index},L{i}(base):C/S len mismatch. C:{len(current_c_values)},S:{len(s_schema)}.Skip."
+                                f"Pág{page_index},L{i}(base): C/S len mismatch. Skip."
+                                f" C:{len(current_c_values)}, S:{len(s_schema)}"
                             )
                             last_processed_pydantic_row = {}
                             continue
@@ -830,7 +841,7 @@ class PrecatoriosCrawler:
                             csv_field_cfg = api_name_to_csv_field_map.get(base_api_name)
 
                             if not csv_field_cfg:
-                                # logger.debug(f"Pág{page_index},L{i},C{col_idx}: API name '{base_api_name}' not mapped. Skip field.")
+                                # logger.debug(f"Pág{page_index},L{i},C{col_idx}: API name not mapped. Skip.")
                                 continue
 
                             target_csv_field = csv_field_cfg["csv_field"]
@@ -904,7 +915,8 @@ class PrecatoriosCrawler:
                             current_c_values_delta = raw_row_data_container.get("C", [])
 
                             logger.debug(
-                                f"Pág{page_index},L{i} Delta: R={rulifier_r}({bin(rulifier_r)}), C_delta={current_c_values_delta}"
+                                f"Pág{page_index},L{i} Delta: R={rulifier_r}({bin(rulifier_r)}), "
+                                f"C_delta={current_c_values_delta}"
                             )
 
                             for col_idx, schema_item in enumerate(s_schema):
@@ -912,7 +924,7 @@ class PrecatoriosCrawler:
                                     global_descriptor_selects
                                 ):  # Segurança
                                     logger.warning(
-                                        f"Pág{page_index},L{i} Delta,C{col_idx}: Idx OOB for global_descriptors. Skip field."
+                                        f"Pág{page_index},L{i} Delta,C{col_idx}: Idx OOB for global_desc. Skip."
                                     )
                                     continue
 
@@ -927,29 +939,21 @@ class PrecatoriosCrawler:
                                 )
 
                                 if not csv_field_cfg:
-                                    # logger.debug(f"Pág{page_index},L{i} Delta,C{col_idx}: API name '{base_api_name}' not mapped. Skip.")
+                                    # logger.debug(f"Pág{page_index},L{i} Delta,C{col_idx}: API name not mapped. Skip.")
                                     continue
 
                                 target_csv_field = csv_field_cfg["csv_field"]
                                 target_field_type = csv_field_cfg["type"]
 
                                 # Checa o bit correspondente no Rulifier
-                                # (1 << col_idx) cria uma máscara para o bit na posição col_idx
-                                # Se o bit está SET (1), herda. Se CLEAR (0), usa valor de C.
-                                if (rulifier_r >> col_idx) & 1:  # Bit é 1, Herda
-                                    pydantic_input_row[target_csv_field] = (
-                                        last_processed_pydantic_row.get(
-                                            target_csv_field,
-                                            self._format_value(
-                                                csv_field_cfg.get("default"),
-                                                target_field_type,
-                                            ),
-                                        )
-                                    )
-                                else:  # Bit é 0, Novo valor de C_delta
+                                # Bit 0 (Clear) = Novo Valor, Bit 1 (Set) = Herdar
+                                if not (
+                                    (rulifier_r >> col_idx) & 1
+                                ):  # Bit é 0, Novo valor de C_delta
                                     if c_delta_idx >= len(current_c_values_delta):
-                                        logger.warning(
-                                            f"Pág{page_index},L{i}Del({target_csv_field}):VD'{dict_name}',C_del idx OOB. Inherit."
+                                        logger.error(
+                                            f"Pág{page_index},L{i}Del({target_csv_field}):R bit0 (Novo),"
+                                            f"C_delta({current_c_values_delta})OOB(idx{c_delta_idx}).Herdando como fallback."
                                         )
                                         pydantic_input_row[target_csv_field] = (
                                             last_processed_pydantic_row.get(
@@ -960,12 +964,13 @@ class PrecatoriosCrawler:
                                                 ),
                                             )
                                         )
-                                        continue
+                                        # Não incrementa c_delta_idx aqui pois não consumiu
+                                        continue  # Pula para o próximo col_idx
 
                                     raw_value_for_field = current_c_values_delta[
                                         c_delta_idx
                                     ]
-                                    c_delta_idx += 1
+                                    c_delta_idx += 1  # Consumiu um valor de C_delta
 
                                     dict_name = schema_item.get("DN")
                                     val_to_assign = None
@@ -980,16 +985,17 @@ class PrecatoriosCrawler:
                                             ) and 0 <= actual_idx < len(vd_list):
                                                 val_to_assign = vd_list[actual_idx]
                                                 resolved_value = True
-                                            else:  # Índice inválido para ValueDict
+                                            else:
                                                 len_val = (
                                                     len(vd_list)
                                                     if vd_list is not None
                                                     else "N/A"
                                                 )
                                                 logger.warning(
-                                                    f"Pág{page_index},L{i}Del({target_csv_field}):"
-                                                    f"VD'{dict_name}',C_del idx'{raw_value_for_field}'OOB(len:{len_val}).Herdou."
+                                                    f"Pág{page_index},L{i}Del({target_csv_field}):R bit0 (Novo),"
+                                                    f"VD'{dict_name}',C_del idx'{raw_value_for_field}'OOB(len:{len_val}).Herdando."
                                                 )
+                                                # Fallback para herdar se o índice do dicionário for inválido
                                                 pydantic_input_row[target_csv_field] = (
                                                     last_processed_pydantic_row.get(
                                                         target_csv_field,
@@ -1003,9 +1009,10 @@ class PrecatoriosCrawler:
                                                 )
                                         except (ValueError, TypeError):
                                             logger.warning(
-                                                f"Pág{page_index},L{i}Del({target_csv_field}):"
-                                                f"VD'{dict_name}',C_del val'{raw_value_for_field}'not int.Herdou."
+                                                f"Pág{page_index},L{i}Del({target_csv_field}):R bit0 (Novo),"
+                                                f"VD'{dict_name}',C_del val'{raw_value_for_field}'not int.Herdando."
                                             )
+                                            # Fallback para herdar se o valor do dicionário não for int
                                             pydantic_input_row[target_csv_field] = (
                                                 last_processed_pydantic_row.get(
                                                     target_csv_field,
@@ -1030,7 +1037,17 @@ class PrecatoriosCrawler:
                                                 decoded, target_field_type
                                             )
                                         )
-                                    # Se resolved_value for False (erro de VD), o campo já foi setado para herdar.
+                                else:  # Bit é 1, Herda
+                                    pydantic_input_row[target_csv_field] = (
+                                        last_processed_pydantic_row.get(
+                                            target_csv_field,
+                                            self._format_value(
+                                                csv_field_cfg.get("default"),
+                                                target_field_type,
+                                            ),
+                                        )
+                                    )
+                                    # Não incrementa c_delta_idx aqui pois não consumiu nada de C_delta
 
                         last_processed_pydantic_row = pydantic_input_row.copy()
 
@@ -1041,9 +1058,7 @@ class PrecatoriosCrawler:
                         dumped_row = precatorio_obj.dict()
 
                         current_order_in_normalized_list += 1
-                        dumped_row["ordem"] = (
-                            current_order_in_normalized_list  # Atribui ordem corrigida
-                        )
+                        dumped_row["ordem"] = current_order_in_normalized_list
 
                         logger.debug(
                             "pydantic_output_post_dump",
@@ -1092,7 +1107,7 @@ class PrecatoriosCrawler:
             total_raw_records=total_raw_records_count,
             normalized_records=len(normalized_rows),
         )
-        return normalized_rows
+        return normalized_rows, current_order_in_normalized_list
 
     def write_csv(self, rows: List[Dict], out_file: str):
         """Escreve os dados em um arquivo CSV."""
@@ -1208,7 +1223,7 @@ class PrecatoriosCrawler:
 
             # Normaliza os dados
             logger.info("normalizing_data", entity=entity_slug)
-            rows = self.normalize_to_rows(raw_data)
+            rows, _ = self.normalize_to_rows(raw_data)
 
             if not rows:
                 logger.warning("no_normalized_data", entity=entity_slug)

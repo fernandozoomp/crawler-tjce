@@ -3,11 +3,7 @@ import os
 import uuid
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
-from typing import (
-    Dict,
-    List,
-    Optional,
-)  # Adicionado Any para compatibilidade com PAYLOAD_STRUCTURE se necessário, mas Dict e List são os principais.
+from typing import Dict, List, Optional
 
 # Carrega as variáveis de ambiente
 load_dotenv()
@@ -86,15 +82,11 @@ class CrawlerConfig:
         return {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-            "ActivityId": str(
-                uuid.uuid4()
-            ),  # Gerar novo ActivityId a cada chamada de headers
+            "ActivityId": str(uuid.uuid4()),
             "Connection": "keep-alive",
             "Content-Type": "application/json;charset=UTF-8",
             "Origin": "https://app.powerbi.com",
-            "RequestId": str(
-                uuid.uuid4()
-            ),  # Gerar novo RequestId a cada chamada de headers
+            "RequestId": str(uuid.uuid4()),
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "cross-site",
@@ -152,12 +144,12 @@ class FieldConfig:
                 "api_name": "dfslcp_dsc_tipo_classificao",
             },
             "valor_original": {
-                "type": "float",  # Mantido como float conforme config_new, mas Pydantic o tratará como Decimal
+                "type": "float",
                 "default": "0.0",
                 "api_name": "dfslcp_vlr_original",
             },
             "valor_atual": {
-                "type": "Decimal",  # Corrigido para Decimal como estava em config_new FieldConfig
+                "type": "Decimal",
                 "default": "0.0",
                 "api_name": "ValorAtualFormatado",
             },
@@ -173,11 +165,8 @@ class FieldConfig:
 config = CrawlerConfig()
 field_config = FieldConfig()
 
-# Estrutura do payload para a API (mantida do config.py original)
-# É importante que os "Property" aqui correspondam aos "api_name" em FieldConfig.
-# Especialmente, "dfslcp_vlr_atual" foi confirmado.
 PAYLOAD_STRUCTURE = {
-    "version": "1.0.0",  # Versão do cURL
+    "version": 1,
     "queries": [
         {
             "Query": {
@@ -193,7 +182,7 @@ PAYLOAD_STRUCTURE = {
                                         "Type": 0,
                                     }
                                 ],
-                                "Select": [  # ATUALIZADO PARA CORRESPONDER AO cURL
+                                "Select": [
                                     {
                                         "Column": {
                                             "Expression": {
@@ -210,7 +199,7 @@ PAYLOAD_STRUCTURE = {
                                             },
                                             "Property": "dfslcp_num_ano_orcamento",
                                         },
-                                        "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ano_orcamento)",  # cURL usa Sum()
+                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ano_orcamento",
                                     },
                                     {
                                         "Column": {
@@ -221,19 +210,14 @@ PAYLOAD_STRUCTURE = {
                                         },
                                         "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_natureza",
                                     },
-                                    {  # cURL usa HierarchyLevel para data_cadastro
-                                        "HierarchyLevel": {
+                                    {
+                                        "Column": {
                                             "Expression": {
-                                                "Hierarchy": {
-                                                    "Expression": {
-                                                        "SourceRef": {"Source": "d"}
-                                                    },
-                                                    "Hierarchy": "Data_Cadastro",
-                                                }
+                                                "SourceRef": {"Source": "d"}
                                             },
-                                            "Level": "Data Cadastro",
+                                            "Property": "dfslcp_dat_cadastro",
                                         },
-                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dat_cadastro Hierarquia.dfslcp_dat_cadastro",
+                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dat_cadastro",
                                     },
                                     {
                                         "Column": {
@@ -251,7 +235,7 @@ PAYLOAD_STRUCTURE = {
                                             },
                                             "Property": "dfslcp_vlr_original",
                                         },
-                                        "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_vlr_original)",  # cURL usa Sum()
+                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_vlr_original",
                                     },
                                     {
                                         "Column": {
@@ -260,7 +244,7 @@ PAYLOAD_STRUCTURE = {
                                             },
                                             "Property": "dfslcp_num_ordem",
                                         },
-                                        "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ordem)",  # cURL usa Sum()
+                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ordem",
                                     },
                                     {
                                         "Column": {
@@ -286,11 +270,11 @@ PAYLOAD_STRUCTURE = {
                                                 "SourceRef": {"Source": "d"}
                                             },
                                             "Property": "ValorAtualFormatado",
-                                        },  # API Name de field_config
+                                        },
                                         "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.ValorAtualFormatado",
                                     },
                                 ],
-                                "Where": [  # Manter o filtro de entidade default aqui, será removido/substituído no crawler.py
+                                "Where": [
                                     {
                                         "Condition": {
                                             "In": {
@@ -319,7 +303,7 @@ PAYLOAD_STRUCTURE = {
                                         }
                                     }
                                 ],
-                                "OrderBy": [  # Manter OrderBy default, será sobrescrito se PAGINATION_ORDER_BY_COLUMNS for diferente
+                                "OrderBy": [
                                     {
                                         "Direction": 1,
                                         "Expression": {
@@ -333,7 +317,7 @@ PAYLOAD_STRUCTURE = {
                                     }
                                 ],
                             },
-                            "Binding": {  # ATUALIZADO PARA CORRESPONDER AO cURL
+                            "Binding": {
                                 "Primary": {
                                     "Groupings": [
                                         {
@@ -348,18 +332,14 @@ PAYLOAD_STRUCTURE = {
                                                 7,
                                                 8,
                                                 9,
-                                            ],  # 10 colunas no Select
+                                            ],
                                             "Subtotal": 1,
                                         }
                                     ]
                                 },
                                 "DataReduction": {
-                                    "DataVolume": 3,  # Do cURL
-                                    "Primary": {
-                                        "Window": {
-                                            "Count": 500
-                                        }  # Count default para requisições, será ajustado pelo crawler
-                                    },
+                                    "DataVolume": 3,
+                                    "Primary": {"Window": {"Count": 500}},
                                 },
                                 "Version": 1,
                             },
@@ -368,18 +348,18 @@ PAYLOAD_STRUCTURE = {
                     }
                 ]
             },
-            # "QueryId": "", # Removido do cURL, deixar o crawler gerar se necessário
-            "ApplicationContext": {  # ATUALIZADO PARA CORRESPONDER AO cURL
-                "DatasetId": "4c290280-9235-4dd4-a48e-888f14efb2d8",
+            "CacheKey": str(uuid.uuid4()),
+            "ApplicationContext": {
+                "DatasetId": "a5921770-b898-442d-9693-d0393d3e7996",
                 "Sources": [
                     {
-                        "ReportId": "e610bea8-b5e1-4bdf-84b5-db63928dfcd9",
-                        "VisualId": "99f187e38dbe0509eab4",
+                        "ReportId": "69f1b060-9e50-402e-99c9-5592f8b001c8",
+                        "VisualId": "f6d03712b8e8502833a0",
                     }
                 ],
             },
         }
     ],
     "cancelQueries": [],
-    "modelId": 4287487,  # Do cURL
+    "modelId": 4287487,
 }

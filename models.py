@@ -84,7 +84,7 @@ class Precatorio(BaseModel):
             if "datetime" in v.lower():
                 try:
                     parts_str = v[
-                        v.lower().find("datetime(") + len("datetime("): v.rfind(")")
+                        v.lower().find("datetime(") + len("datetime(") : v.rfind(")")
                     ]
                     parts = [int(p.strip()) for p in parts_str.split(",")]
                     return datetime(*parts)
@@ -98,7 +98,9 @@ class Precatorio(BaseModel):
             try:
                 if v.isdigit():
                     num_v = float(v)
-                    if num_v > 253402300799: # Limite para timestamps em segundos que podem ser milissegundos
+                    if (
+                        num_v > 253402300799
+                    ):  # Limite para timestamps em segundos que podem ser milissegundos
                         return datetime.fromtimestamp(num_v / 1000.0)
                     return datetime.fromtimestamp(num_v)
             except ValueError:
@@ -106,7 +108,7 @@ class Precatorio(BaseModel):
 
         if isinstance(v, (int, float)):
             try:
-                if v > 253402300799: # Checagem similar para números
+                if v > 253402300799:  # Checagem similar para números
                     return datetime.fromtimestamp(v / 1000.0)
                 return datetime.fromtimestamp(v)
             except Exception:
@@ -128,7 +130,9 @@ class Precatorio(BaseModel):
         if isinstance(v, str):
             if not v.isdigit():
                 # Tentativa de extrair ano de um timestamp em string (geralmente milissegundos)
-                if len(v) > 8 and all(c.isdigit() for c in v): # Heurística para timestamp longo em string
+                if len(v) > 8 and all(
+                    c.isdigit() for c in v
+                ):  # Heurística para timestamp longo em string
                     try:
                         return datetime.fromtimestamp(int(v) / 1000.0).year
                     except ValueError:
@@ -144,11 +148,13 @@ class Precatorio(BaseModel):
             return default_ano
 
         # Se o valor for um timestamp muito grande (provavelmente ms), converte para ano
-        if v_int > 3000 and len(str(v_int)) > 8: # Heurística: se > 3000 e tem muitos dígitos
+        if (
+            v_int > 3000 and len(str(v_int)) > 8
+        ):  # Heurística: se > 3000 e tem muitos dígitos
             try:
                 return datetime.fromtimestamp(v_int / 1000.0).year
             except ValueError:
-                pass # Continua para a próxima verificação
+                pass  # Continua para a próxima verificação
 
         if 1900 <= v_int <= current_year + 5:
             return v_int
@@ -175,21 +181,35 @@ class Precatorio(BaseModel):
 
             if num_commas == 1 and num_dots > 1:  # Formato: 1.234.567,89
                 cleaned_v = cleaned_v.replace(".", "").replace(",", ".")
+            elif (
+                num_commas == 1
+                and num_dots == 1
+                and cleaned_v.rfind(",") > cleaned_v.rfind(".")
+            ):  # Formato: 1.234,56 ou 123.456,78
+                cleaned_v = cleaned_v.replace(".", "").replace(",", ".")
             elif num_commas > 1 and num_dots == 1:  # Formato: 1,234,567.89 (americano)
                 cleaned_v = cleaned_v.replace(",", "")
             elif num_commas == 1 and num_dots == 0:  # Formato: 1234,56
                 cleaned_v = cleaned_v.replace(",", ".")
             # Casos como '1.234' (milhar sem decimal) ou '1234.56' devem ser tratados com cuidado
             # Se len(parte_após_ponto) == 3 e não há vírgula, pode ser milhar. Ex: 1.234
-            elif num_dots == 1 and num_commas == 0 and len(cleaned_v.split(".")[-1]) == 3:
-                 # Verifica se o ponto é realmente um separador de milhar e não decimal
-                 # Ex: "1.234" -> "1234", mas "123.456" (com decimal de 3 casas) -> "123.456"
-                 # Esta lógica pode ser complexa. Uma forma mais simples é remover pontos se eles não forem seguidos por 2 decimais.
-                 # Se o último ponto for um separador de milhar e não houver vírgula
-                 if cleaned_v.count('.') == 1 and len(cleaned_v.split('.')[-1]) == 3 and not any(char.isdigit() for char in cleaned_v.split('.')[-1][:2]): # ex 1.23X
-                     pass # não faz nada, pode ser um decimal com 3 casas
-                 elif cleaned_v.count('.') >= 1 and len(cleaned_v.split('.')[-1]) != 2 : #  Trata pontos como separadores de milhar se a parte decimal não for XX
-                     cleaned_v = cleaned_v.replace(".", "")
+            elif (
+                num_dots == 1 and num_commas == 0 and len(cleaned_v.split(".")[-1]) == 3
+            ):
+                # Verifica se o ponto é realmente um separador de milhar e não decimal
+                # Ex: "1.234" -> "1234", mas "123.456" (com decimal de 3 casas) -> "123.456"
+                # Esta lógica pode ser complexa. Uma forma mais simples é remover pontos se eles não forem seguidos por 2 decimais.
+                # Se o último ponto for um separador de milhar e não houver vírgula
+                if (
+                    cleaned_v.count(".") == 1
+                    and len(cleaned_v.split(".")[-1]) == 3
+                    and not any(char.isdigit() for char in cleaned_v.split(".")[-1][:2])
+                ):  # ex 1.23X
+                    pass  # não faz nada, pode ser um decimal com 3 casas
+                elif (
+                    cleaned_v.count(".") >= 1 and len(cleaned_v.split(".")[-1]) != 2
+                ):  #  Trata pontos como separadores de milhar se a parte decimal não for XX
+                    cleaned_v = cleaned_v.replace(".", "")
 
             try:
                 return Decimal(cleaned_v)
@@ -253,13 +273,13 @@ class HealthCheckResponse(BaseModel):
 class FetchPrecatoriosQuery(BaseModel):
     entity: str = Field(
         ...,
-        description='Slug da entidade para buscar precatórios. Ex: municipio-de-fortaleza',
-        example='municipio-de-fortaleza'
+        description="Slug da entidade para buscar precatórios. Ex: municipio-de-fortaleza",
+        example="municipio-de-fortaleza",
     )
     count: Optional[int] = Field(
         None,
-        description='Número de registros a serem retornados. Se não fornecido, busca todos.',
-        example=10
+        description="Número de registros a serem retornados. Se não fornecido, busca todos.",
+        example=10,
     )
 
     class Config:
