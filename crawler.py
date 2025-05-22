@@ -391,17 +391,21 @@ class PrecatoriosCrawler:
                 f"Slug ou nome da entidade inválido: {entity_slug_or_official_name}"
             )
 
-        if "Where" not in command_structure:
-            command_structure["Where"] = []
+        # Corrigir o acesso à cláusula Where
+        query_definition = command_structure[
+            "Query"
+        ]  # command_structure é SemanticQueryDataShapeCommand
+
+        if "Where" not in query_definition:
+            query_definition["Where"] = []
 
         # Remover filtros de entidade preexistentes para evitar duplicidade ou conflito.
-        # Isso é crucial se o PAYLOAD_STRUCTURE base contiver um filtro de entidade padrão.
         preserved_filters = []
         entity_column_names = [
             "dfslcp_nom_entidade_devedora",
             "dfslcp_dsc_entidade",
         ]  # Nomes comuns para colunas de entidade
-        for item_filter in command_structure["Where"]:
+        for item_filter in query_definition["Where"]:
             is_entity_filter = False
             try:
                 # Checa se o filtro atual é um filtro de entidade (Comparison)
@@ -436,7 +440,7 @@ class PrecatoriosCrawler:
             else:
                 logger.debug(f"Removing pre-existing entity filter: {item_filter}")
 
-        command_structure["Where"] = preserved_filters
+        query_definition["Where"] = preserved_filters
         new_filters = list(
             preserved_filters
         )  # Começa com os filtros não-entidade preservados
@@ -504,8 +508,8 @@ class PrecatoriosCrawler:
         else:
             logger.debug("No year filter applied as year was not provided.")
 
-        command_structure["Where"] = new_filters
-        logger.debug(f"Final filters for Where clause: {command_structure['Where']}")
+        query_definition["Where"] = new_filters
+        logger.debug(f"Final filters for Where clause: {query_definition['Where']}")
 
         logger.debug(
             "Final payload generated",
@@ -914,6 +918,10 @@ class PrecatoriosCrawler:
                             c_delta_idx = 0
                             current_c_values_delta = raw_row_data_container.get("C", [])
 
+                            # Inicializa pydantic_input_row como uma cópia da linha anterior processada
+                            # antes de aplicar as modificações do Rulifier.
+                            pydantic_input_row = last_processed_pydantic_row.copy()
+
                             logger.debug(
                                 f"Pág{page_index},L{i} Delta: R={rulifier_r}({bin(rulifier_r)}), "
                                 f"C_delta={current_c_values_delta}"
@@ -953,7 +961,7 @@ class PrecatoriosCrawler:
                                     if c_delta_idx >= len(current_c_values_delta):
                                         logger.error(
                                             f"Pág{page_index},L{i}Del({target_csv_field}):R bit0 (Novo),"
-                                            f"C_delta({current_c_values_delta})OOB(idx{c_delta_idx}).Herdando como fallback."
+                                            f"C_delta OOB(idx{c_delta_idx}). Herdando."
                                         )
                                         pydantic_input_row[target_csv_field] = (
                                             last_processed_pydantic_row.get(
@@ -967,87 +975,75 @@ class PrecatoriosCrawler:
                                         # Não incrementa c_delta_idx aqui pois não consumiu
                                         continue  # Pula para o próximo col_idx
 
-                                    raw_value_for_field = current_c_values_delta[
+                                    raw_value_from_c = current_c_values_delta[
                                         c_delta_idx
                                     ]
-                                    c_delta_idx += 1  # Consumiu um valor de C_delta
+                                    schema_item = s_schema[col_idx]
+                                    target_field_type = csv_field_cfg.get("type", "str")
 
-                                    dict_name = schema_item.get("DN")
-                                    val_to_assign = None
-                                    resolved_value = False
-
-                                    if dict_name:
-                                        try:
-                                            actual_idx = int(raw_value_for_field)
-                                            vd_list = value_dicts.get(dict_name)
-                                            if isinstance(
-                                                vd_list, list
-                                            ) and 0 <= actual_idx < len(vd_list):
-                                                val_to_assign = vd_list[actual_idx]
-                                                resolved_value = True
+                                    # Se o raw_value_from_c for uma string, é um valor direto (ou um valor formatado que deve ser tratado como string inicialmente)
+                                    if isinstance(raw_value_from_c, str):
+                                        processed_value = self._format_value(
+                                            raw_value_from_c, target_field_type
+                                        )
+                                        pydantic_input_row[target_csv_field] = (
+                                            processed_value
+                                        )
+                                        # logger.debug(f"  L{i}Del({target_csv_field}):R bit0(Novo), C_delta[{c_delta_idx}]='{raw_value_from_c}' (STR Direto) -> '{processed_value}'")
+                                    elif isinstance(raw_value_from_c, (int, float)):
+                                        dict_name = schema_item.get("DN")
+                                        # Caso 1: É um índice para um ValueDict
+                                        if dict_name:
+                                            if (
+                                                dict_name in value_dicts
+                                                and isinstance(raw_value_from_c, int)
+                                                and 0
+                                                <= raw_value_from_c
+                                                < len(value_dicts[dict_name])
+                                            ):
+                                                val_from_dict = value_dicts[dict_name][
+                                                    raw_value_from_c
+                                                ]
+                                                processed_value = self._format_value(
+                                                    val_from_dict, target_field_type
+                                                )
+                                                pydantic_input_row[target_csv_field] = (
+                                                    processed_value
+                                                )
+                                                # logger.debug(f"  L{i}Del({target_csv_field}):R bit0(Novo), C_delta[{c_delta_idx}]={raw_value_from_c} (Índice VD '{dict_name}') -> DictVal '{val_from_dict}' -> '{processed_value}'")
                                             else:
-                                                len_val = (
-                                                    len(vd_list)
-                                                    if vd_list is not None
-                                                    else "N/A"
-                                                )
-                                                logger.warning(
-                                                    f"Pág{page_index},L{i}Del({target_csv_field}):R bit0 (Novo),"
-                                                    f"VD'{dict_name}',C_del idx'{raw_value_for_field}'OOB(len:{len_val}).Herdando."
-                                                )
-                                                # Fallback para herdar se o índice do dicionário for inválido
+                                                # Fallback para herdar se o índice do dicionário for inválido ou VD não encontrado
                                                 pydantic_input_row[target_csv_field] = (
                                                     last_processed_pydantic_row.get(
                                                         target_csv_field,
-                                                        self._format_value(
-                                                            csv_field_cfg.get(
-                                                                "default"
-                                                            ),
-                                                            target_field_type,
-                                                        ),
+                                                        csv_field_cfg.get("default"),
                                                     )
                                                 )
-                                        except (ValueError, TypeError):
-                                            logger.warning(
-                                                f"Pág{page_index},L{i}Del({target_csv_field}):R bit0 (Novo),"
-                                                f"VD'{dict_name}',C_del val'{raw_value_for_field}'not int.Herdando."
-                                            )
-                                            # Fallback para herdar se o valor do dicionário não for int
-                                            pydantic_input_row[target_csv_field] = (
-                                                last_processed_pydantic_row.get(
-                                                    target_csv_field,
-                                                    self._format_value(
-                                                        csv_field_cfg.get("default"),
-                                                        target_field_type,
-                                                    ),
+                                                logger.warning(
+                                                    f"Pág{page_index},L{i}Del({target_csv_field}):R bit0 (Novo),"
+                                                    f"VD'{dict_name}',C_del idx'{raw_value_from_c}'OOB. Herdando."
                                                 )
+                                        # Caso 2: É um valor numérico direto (ex: ano, ordem, valor original float)
+                                        else:
+                                            processed_value = self._format_value(
+                                                str(raw_value_from_c), target_field_type
+                                            )  # _format_value espera string
+                                            pydantic_input_row[target_csv_field] = (
+                                                processed_value
                                             )
-                                    else:  # Sem DN, valor literal de C_delta
-                                        val_to_assign = raw_value_for_field
-                                        resolved_value = True
-
-                                    if resolved_value:
-                                        decoded = (
-                                            self._decode_utf8(str(val_to_assign))
-                                            if val_to_assign is not None
-                                            else None
-                                        )
+                                            # logger.debug(f"  L{i}Del({target_csv_field}):R bit0(Novo), C_delta[{c_delta_idx}]={raw_value_from_c} (Numérico Direto) -> '{processed_value}'")
+                                    else:
+                                        # Tipo inesperado em C_delta, herdar como fallback seguro
                                         pydantic_input_row[target_csv_field] = (
-                                            self._format_value(
-                                                decoded, target_field_type
+                                            last_processed_pydantic_row.get(
+                                                target_csv_field,
+                                                csv_field_cfg.get("default"),
                                             )
                                         )
-                                else:  # Bit é 1, Herda
-                                    pydantic_input_row[target_csv_field] = (
-                                        last_processed_pydantic_row.get(
-                                            target_csv_field,
-                                            self._format_value(
-                                                csv_field_cfg.get("default"),
-                                                target_field_type,
-                                            ),
+                                        logger.error(
+                                            f"Pág{page_index},L{i}Del({target_csv_field}):R bit0 (Novo), C_delta[{c_delta_idx}]={raw_value_from_c} (Tipo Inesperado {type(raw_value_from_c)}). Herdando."
                                         )
-                                    )
-                                    # Não incrementa c_delta_idx aqui pois não consumiu nada de C_delta
+                                    c_delta_idx += 1
 
                         last_processed_pydantic_row = pydantic_input_row.copy()
 
