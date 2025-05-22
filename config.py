@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import (
     Dict,
     List,
-    Optional
+    Optional,
 )  # Adicionado Any para compatibilidade com PAYLOAD_STRUCTURE se necessário, mas Dict e List são os principais.
 
 # Carrega as variáveis de ambiente
@@ -29,25 +29,53 @@ class CrawlerConfig:
     )
     default_entity: str = "MUNICIPIO DE FORTALEZA"
     model_id: int = field(default_factory=lambda: int(os.getenv("MODEL_ID", "4287487")))
-    entities_output_filename: str = field(default_factory=lambda: os.getenv("ENTITIES_OUTPUT_FILENAME", "entidades_tjce.csv"))
+    entities_output_filename: str = field(
+        default_factory=lambda: os.getenv(
+            "ENTITIES_OUTPUT_FILENAME", "entidades_tjce.csv"
+        )
+    )
 
     # Configurações de Cache
-    cache_default_timeout: int = field(default_factory=lambda: int(os.getenv("CACHE_DEFAULT_TIMEOUT", "300")))
-    cache_timeout_entities: int = field(default_factory=lambda: int(os.getenv("CACHE_TIMEOUT_ENTITIES", "3600")))
+    cache_default_timeout: int = field(
+        default_factory=lambda: int(os.getenv("CACHE_DEFAULT_TIMEOUT", "300"))
+    )
+    cache_timeout_entities: int = field(
+        default_factory=lambda: int(os.getenv("CACHE_TIMEOUT_ENTITIES", "3600"))
+    )
 
     # Configurações de Rate Limit
-    rate_limit_default: str = field(default_factory=lambda: os.getenv("RATE_LIMIT_DEFAULT", "200 per day,50 per hour"))
-    rate_limit_entities: str = field(default_factory=lambda: os.getenv("RATE_LIMIT_ENTITIES", "60 per hour"))
-    rate_limit_fetch: str = field(default_factory=lambda: os.getenv("RATE_LIMIT_FETCH", "50 per hour,10 per minute"))
+    rate_limit_default: str = field(
+        default_factory=lambda: os.getenv(
+            "RATE_LIMIT_DEFAULT", "200 per day,50 per hour"
+        )
+    )
+    rate_limit_entities: str = field(
+        default_factory=lambda: os.getenv("RATE_LIMIT_ENTITIES", "60 per hour")
+    )
+    rate_limit_fetch: str = field(
+        default_factory=lambda: os.getenv(
+            "RATE_LIMIT_FETCH", "50 per hour,10 per minute"
+        )
+    )
 
     # Configurações do Pinata
-    pinata_api_jwt: Optional[str] = field(default_factory=lambda: os.getenv("PINATA_API_JWT"))
-    pinata_gateway_url: Optional[str] = field(default_factory=lambda: os.getenv("PINATA_GATEWAY_URL", "https://gateway.pinata.cloud/ipfs/"))
+    pinata_api_jwt: Optional[str] = field(
+        default_factory=lambda: os.getenv("PINATA_API_JWT")
+    )
+    pinata_gateway_url: Optional[str] = field(
+        default_factory=lambda: os.getenv(
+            "PINATA_GATEWAY_URL", "https://gateway.pinata.cloud/ipfs/"
+        )
+    )
     pinata_api_upload_url: str = "https://api.pinata.cloud/pinning/pinFileToIPFS"
 
     # Configurações do Flask
-    flask_debug_mode: bool = field(default_factory=lambda: os.getenv("FLASK_DEBUG_MODE", "False").lower() == "true")
-    flask_port: int = field(default_factory=lambda: int(os.getenv("FLASK_PORT", "5000")))
+    flask_debug_mode: bool = field(
+        default_factory=lambda: os.getenv("FLASK_DEBUG_MODE", "False").lower() == "true"
+    )
+    flask_port: int = field(
+        default_factory=lambda: int(os.getenv("FLASK_PORT", "5000"))
+    )
 
     def __post_init__(self):
         if not self.api_url.endswith("synchronous=true"):
@@ -149,7 +177,7 @@ field_config = FieldConfig()
 # É importante que os "Property" aqui correspondam aos "api_name" em FieldConfig.
 # Especialmente, "dfslcp_vlr_atual" foi confirmado.
 PAYLOAD_STRUCTURE = {
-    "version": 1,
+    "version": "1.0.0",  # Versão do cURL
     "queries": [
         {
             "Query": {
@@ -165,7 +193,7 @@ PAYLOAD_STRUCTURE = {
                                         "Type": 0,
                                     }
                                 ],
-                                "Select": [
+                                "Select": [  # ATUALIZADO PARA CORRESPONDER AO cURL
                                     {
                                         "Column": {
                                             "Expression": {
@@ -182,7 +210,7 @@ PAYLOAD_STRUCTURE = {
                                             },
                                             "Property": "dfslcp_num_ano_orcamento",
                                         },
-                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ano_orcamento",
+                                        "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ano_orcamento)",  # cURL usa Sum()
                                     },
                                     {
                                         "Column": {
@@ -193,14 +221,19 @@ PAYLOAD_STRUCTURE = {
                                         },
                                         "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_natureza",
                                     },
-                                    {
-                                        "Column": {
+                                    {  # cURL usa HierarchyLevel para data_cadastro
+                                        "HierarchyLevel": {
                                             "Expression": {
-                                                "SourceRef": {"Source": "d"}
+                                                "Hierarchy": {
+                                                    "Expression": {
+                                                        "SourceRef": {"Source": "d"}
+                                                    },
+                                                    "Hierarchy": "Data_Cadastro",
+                                                }
                                             },
-                                            "Property": "dfslcp_dat_cadastro",
+                                            "Level": "Data Cadastro",
                                         },
-                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dat_cadastro",
+                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dat_cadastro Hierarquia.dfslcp_dat_cadastro",
                                     },
                                     {
                                         "Column": {
@@ -218,7 +251,7 @@ PAYLOAD_STRUCTURE = {
                                             },
                                             "Property": "dfslcp_vlr_original",
                                         },
-                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_vlr_original",
+                                        "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_vlr_original)",  # cURL usa Sum()
                                     },
                                     {
                                         "Column": {
@@ -227,7 +260,7 @@ PAYLOAD_STRUCTURE = {
                                             },
                                             "Property": "dfslcp_num_ordem",
                                         },
-                                        "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ordem",
+                                        "Name": "Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ordem)",  # cURL usa Sum()
                                     },
                                     {
                                         "Column": {
@@ -253,11 +286,11 @@ PAYLOAD_STRUCTURE = {
                                                 "SourceRef": {"Source": "d"}
                                             },
                                             "Property": "ValorAtualFormatado",
-                                        },
+                                        },  # API Name de field_config
                                         "Name": "dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.ValorAtualFormatado",
                                     },
                                 ],
-                                "Where": [
+                                "Where": [  # Manter o filtro de entidade default aqui, será removido/substituído no crawler.py
                                     {
                                         "Condition": {
                                             "In": {
@@ -277,7 +310,7 @@ PAYLOAD_STRUCTURE = {
                                                     [
                                                         {
                                                             "Literal": {
-                                                                "Value": "'MUNICÍPIO DE FORTALEZA'"  # Mantém o default para o payload base
+                                                                "Value": "'MUNICÍPIO DE FORTALEZA'"
                                                             }
                                                         }
                                                     ]
@@ -286,9 +319,9 @@ PAYLOAD_STRUCTURE = {
                                         }
                                     }
                                 ],
-                                "OrderBy": [
+                                "OrderBy": [  # Manter OrderBy default, será sobrescrito se PAGINATION_ORDER_BY_COLUMNS for diferente
                                     {
-                                        "Direction": 1,  # Default para primeira busca
+                                        "Direction": 1,
                                         "Expression": {
                                             "Column": {
                                                 "Expression": {
@@ -300,7 +333,7 @@ PAYLOAD_STRUCTURE = {
                                     }
                                 ],
                             },
-                            "Binding": {
+                            "Binding": {  # ATUALIZADO PARA CORRESPONDER AO cURL
                                 "Primary": {
                                     "Groupings": [
                                         {
@@ -315,16 +348,18 @@ PAYLOAD_STRUCTURE = {
                                                 7,
                                                 8,
                                                 9,
-                                            ],
+                                            ],  # 10 colunas no Select
                                             "Subtotal": 1,
                                         }
                                     ]
                                 },
                                 "DataReduction": {
-                                    "DataVolume": 3,  # Mantido conforme última configuração funcional
+                                    "DataVolume": 3,  # Do cURL
                                     "Primary": {
-                                        "Window": {"Count": 1}
-                                    },  # Mantido para teste de registro único
+                                        "Window": {
+                                            "Count": 500
+                                        }  # Count default para requisições, será ajustado pelo crawler
+                                    },
                                 },
                                 "Version": 1,
                             },
@@ -333,18 +368,18 @@ PAYLOAD_STRUCTURE = {
                     }
                 ]
             },
-            "CacheKey": str(uuid.uuid4()),  # Gerar novo CacheKey
-            "ApplicationContext": {
-                "DatasetId": "a5921770-b898-442d-9693-d0393d3e7996",
+            # "QueryId": "", # Removido do cURL, deixar o crawler gerar se necessário
+            "ApplicationContext": {  # ATUALIZADO PARA CORRESPONDER AO cURL
+                "DatasetId": "4c290280-9235-4dd4-a48e-888f14efb2d8",
                 "Sources": [
                     {
-                        "ReportId": "69f1b060-9e50-402e-99c9-5592f8b001c8",
-                        "VisualId": "f6d03712b8e8502833a0",
+                        "ReportId": "e610bea8-b5e1-4bdf-84b5-db63928dfcd9",
+                        "VisualId": "99f187e38dbe0509eab4",
                     }
                 ],
             },
         }
     ],
     "cancelQueries": [],
-    "modelId": 4287487,
+    "modelId": 4287487,  # Do cURL
 }

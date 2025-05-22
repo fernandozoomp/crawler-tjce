@@ -27,22 +27,44 @@ ACTIVE_REQUESTS = Gauge(
 )
 
 
-def track_time(entity: str):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            start_time = time.time()
-            ACTIVE_REQUESTS.labels(entity=entity).inc()
-            try:
-                result = func(*args, **kwargs)
-                REQUEST_DURATION.labels(entity=entity).observe(time.time() - start_time)
-                return result
-            except Exception as e:
-                ERRORS_TOTAL.labels(type=type(e).__name__, entity=entity).inc()
-                raise
-            finally:
-                ACTIVE_REQUESTS.labels(entity=entity).dec()
+def track_time(func):
+    """Um decorador para rastrear a duração, contagem e erros de uma função,
+    extraindo a 'entity' dinamicamente dos argumentos da função decorada.
 
-        return wrapper
+    Espera que a função decorada receba um argumento nomeado 'entity_slug_or_official_name'
+    ou que o primeiro argumento posicional seja a entidade.
+    """
 
-    return decorator
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        entity_label = "unknown_entity_metric"
+
+        # Tenta obter a entidade de kwargs
+        if "entity_slug_or_official_name" in kwargs:
+            entity_label = kwargs["entity_slug_or_official_name"]
+        elif "entity" in kwargs:  # Fallback para kwarg 'entity'
+            entity_label = kwargs["entity"]
+        elif args:  # Fallback para o primeiro argumento posicional
+            # Isso é um pouco arriscado, pois o primeiro arg pode não ser a entidade
+            # Idealmente, as funções decoradas devem usar kwargs nomeados para a entidade.
+            if isinstance(args[0], str):
+                entity_label = args[0]
+            # Se o primeiro arg for 'self' (em um método de classe), tenta o segundo
+            elif len(args) > 1 and isinstance(args[1], str):
+                entity_label = args[1]
+
+        start_time = time.time()
+        ACTIVE_REQUESTS.labels(entity=entity_label).inc()
+        try:
+            result = func(*args, **kwargs)
+            REQUEST_DURATION.labels(entity=entity_label).observe(
+                time.time() - start_time
+            )
+            return result
+        except Exception as e:
+            ERRORS_TOTAL.labels(type=type(e).__name__, entity=entity_label).inc()
+            raise
+        finally:
+            ACTIVE_REQUESTS.labels(entity=entity_label).dec()
+
+    return wrapper

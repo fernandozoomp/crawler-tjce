@@ -3,7 +3,7 @@ import csv
 import json
 from datetime import datetime, timedelta
 import os
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, Tuple
 import locale
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -17,7 +17,11 @@ import urllib.parse
 import requests
 from pydantic import ValidationError
 
-from config import config, field_config as field_cfg, PAYLOAD_STRUCTURE
+from config import (
+    config,
+    field_config,
+    PAYLOAD_STRUCTURE,
+)
 from logger import get_logger
 from models import Precatorio
 from metrics import REQUESTS_TOTAL, RECORDS_PROCESSED, track_time
@@ -36,6 +40,22 @@ except locale.Error:
     )
     LOCALE_OK = False
 
+# PAGINATION_ORDER_BY_COLUMNS = [ # Comentando a lista original
+#     "dfslcp_num_ordem",
+#     "dfslcp_dsc_proc_precatorio",
+#     "dfslcp_num_ano_orcamento",
+#     "dfslcp_dsc_natureza",
+#     "dfslcp_dat_cadastro",
+#     "dfslcp_dsc_tipo_classificao",
+#     "dfslcp_vlr_original",
+#     "dfslcp_dsc_sit_precatorio",
+#     "dfslcp_dsc_comarca",
+#     "ValorAtualFormatado",
+# ]
+
+# Ajustado para corresponder ao OrderBy do cURL funcional
+PAGINATION_ORDER_BY_COLUMNS = ["dfslcp_num_ordem"]
+
 
 def format_currency(value: float) -> str:
     """Formata valor monetário manualmente se o locale não estiver disponível."""
@@ -50,13 +70,16 @@ def format_currency(value: float) -> str:
 class PrecatoriosCrawler:
     def __init__(self):
         self.config_instance = config
-        self.field_config_instance = field_cfg
+        self.field_config_instance = field_config
         self.api_url = self.config_instance.api_url
         self.resource_key = self.config_instance.resource_key
         self.headers = self.config_instance.headers
         self.current_entity_processed_records = 0
         self.session = requests.Session()
         self.session.headers.update(self.headers)
+        self.base_payload = PAYLOAD_STRUCTURE
+        self.pagination_order_by_columns = PAGINATION_ORDER_BY_COLUMNS
+        self.csv_fields = field_config.csv_fields
 
     def _decode_utf8(self, value: str) -> str:
         """Decodifica uma string com caracteres especiais em UTF-8."""
@@ -229,18 +252,13 @@ class PrecatoriosCrawler:
     @retry(
         stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10)
     )
-    @track_time(
-        entity=lambda self_or_args, *args, **kwargs: (
-            self_or_args.config_instance.default_entity
-            if hasattr(self_or_args, "config_instance")
-            else config.default_entity
-        )
-    )
+    @track_time
     def _fetch_page(
         self,
         entity: str,
-        restart_tokens: Optional[str] = None,
+        restart_tokens: Optional[List[Any]] = None,
         count: Optional[int] = None,
+        year: Optional[int] = None,
     ) -> Dict:
         """Busca uma página de dados da API."""
         current_headers = self.session.headers.copy()
@@ -248,286 +266,413 @@ class PrecatoriosCrawler:
             {"ActivityId": str(uuid.uuid4()), "RequestId": str(uuid.uuid4())}
         )
 
-        payload = deepcopy(PAYLOAD_STRUCTURE)
+        payload = self.get_precatorios_payload(
+            entity_slug_or_official_name=entity,
+            count=(count if count is not None else self.config_instance.batch_size),
+            restart_tokens=restart_tokens,
+            year=year,
+        )
 
-        # Modificar o payload se 'count' for fornecido
-        if count is not None:
-            try:
-                # Ajusta o Count para o número de registros desejado
-                payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Binding"]["DataReduction"]["Primary"]["Window"]["Count"] = count
-
-                # Ajusta o DataVolume. Se count for pequeno, podemos usar count.
-                # Para counts maiores, o DataVolume original (ex: 30) ou count pode ser usado.
-                # Vamos usar count aqui para simplificar, assumindo que a API lida bem.
-                # Se isso causar problemas (ex: menos registros que 'count' retornados),
-                # pode ser necessário manter DataVolume maior ou igual a Count.
-                # No nosso teste com 1 registro, DataVolume:3 e Count:1 funcionou.
-                # A estrutura original do PAYLOAD_STRUCTURE já tem DataVolume, podemos mantê-lo ou ajustá-lo.
-                # Por agora, vamos ajustar apenas o Window.Count que é o mais direto para o limite.
-                # Se count=1, idealmente DataVolume deve ser um pouco maior como 3, conforme descoberto.
-                # Vamos generalizar isso: se count for pequeno, aumentar DataVolume.
-                # Para um controle mais fino, essa lógica pode ser expandida.
-                # Por enquanto, focaremos no Window.Count.
-                # A estrutura do PAYLOAD_STRUCTURE já tem um DataReduction.DataVolume.
-                # Vamos também ajustar o DataReduction.DataVolume e o DataReduction.Primary.Count (se existir).
-
-                primary_binding = payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Binding"]
-
-                if "DataReduction" in primary_binding:
-                    if "DataVolume" in primary_binding["DataReduction"]:
-                        # Se count for 1, mantemos DataVolume 3. Caso contrário, pode ser count ou um valor maior.
-                        # A estrutura padrão tem 30. Vamos usar count, mas no mínimo 3.
-                        primary_binding["DataReduction"]["DataVolume"] = (
-                            max(count, 3) if count > 0 else 30
-                        )
-
-                    if (
-                        "Primary" in primary_binding["DataReduction"]
-                        and "Count" in primary_binding["DataReduction"]["Primary"]
-                    ):
-                        # Este 'Count' (não o Window.Count) às vezes é usado como um limite geral.
-                        primary_binding["DataReduction"]["Primary"]["Count"] = count
-
-                logger.info(f"Payload modificado para buscar {count} registros.")
-
-            except (KeyError, IndexError) as e:
-                logger.error(
-                    f"Erro ao tentar modificar o payload para o count: {e}. Usando payload padrão."
+        try:
+            # Tentativa de log mais seguro, verificando a existência das chaves
+            binding_details = (
+                payload.get("Queries", [{}])[0]
+                .get("Query", {})
+                .get("Commands", [{}])[0]
+                .get("SemanticQueryDataStructure", {})
+                .get("Binding")
+            )
+            if binding_details:
+                logger.info(
+                    "fetch_page_request_binding", binding_details=binding_details
                 )
-                # payload permanece como a cópia do PAYLOAD_STRUCTURE original
-
-        # Lógica original para restart_tokens e paginação
-        if restart_tokens:
-            # Esta seção pode precisar de ajuste se a estrutura de RestartTokens não for sob "Window"
-            # no PAYLOAD_STRUCTURE quando buscamos múltiplos registros.
-            # Por enquanto, vamos assumir que a estrutura original do PAYLOAD_STRUCTURE em config.py
-            # (para múltiplos registros) tenha DataReduction.Primary.Window.
-            if (
-                "Window"
-                in payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Binding"]["DataReduction"]["Primary"]
-            ):
-                payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Binding"]["DataReduction"]["Primary"]["Window"]["RestartTokens"] = [
-                    restart_tokens
-                ]
-                payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Query"]["OrderBy"][0][
-                    "Direction"
-                ] = 2  # Ordem descendente para próxima página
             else:
-                logger.warning(
-                    "Estrutura de paginacao (Window) nao encontrada no PAYLOAD_STRUCTURE "
-                    "ao tentar aplicar restart_tokens."
-                )
-        else:
-            # Para a primeira página, garantir a direção correta da ordenação (se houver)
-            if payload["queries"][0]["Query"]["Commands"][0][
-                "SemanticQueryDataShapeCommand"
-            ]["Query"].get("OrderBy"):
-                payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Query"]["OrderBy"][0][
-                    "Direction"
-                ] = 1  # Ordem ascendente para primeira página
-
-        # Atualiza o nome da entidade na cláusula Where
-        payload["queries"][0]["Query"]["Commands"][0]["SemanticQueryDataShapeCommand"][
-            "Query"
-        ]["Where"][0]["Condition"]["In"]["Values"][0][0]["Literal"][
-            "Value"
-        ] = f"'{entity}'"
+                logger.warning("Binding details not found in payload for logging.")
+        except (
+            Exception
+        ) as log_e:  # Pega exceção genérica para o log não quebrar a função
+            logger.warning(f"Could not log binding details due to an error: {log_e}")
 
         REQUESTS_TOTAL.labels(entity=entity).inc()
-        logger.info(
-            "Efetuando requisição para API Power BI",
-            payload_binding_details=payload["queries"][0]["Query"]["Commands"][0][
-                "SemanticQueryDataShapeCommand"
-            ]["Binding"],
-        )
-        response = self.session.post(self.api_url, json=payload, timeout=30)
+        response = self.session.post(
+            self.api_url, json=payload, headers=current_headers, timeout=90
+        )  # Timeout aumentado
         response.raise_for_status()
+        return response.json()
 
-        response_json = response.json()
-        return response_json
-
-    def fetch_data(
+    def get_precatorios_payload(
         self,
         entity_slug_or_official_name: str,
         count: Optional[int] = None,
-        page: int = 0,
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Busca os dados brutos da API do TJCE para uma entidade específica.
-        Agora aceita tanto o slug quanto o nome oficial, mas converterá para nome oficial.
-        """
-        official_entity_name = get_api_entity_name(entity_slug_or_official_name)
-        logger.info(
-            f"Buscando dados para: '{official_entity_name}' "
-            f"(slug: '{entity_slug_or_official_name}'), pág: {page}, cont: {count}"
-        )
+        skip: int = 0,
+        year: Optional[int] = None,
+        restart_tokens: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Prepara o payload para a requisição de precatórios, incluindo filtros e paginação."""
+        payload = deepcopy(self.base_payload)
 
-        restart_tokens: Optional[str] = None  # Inicializa restart_tokens
-
-        # Cria uma cópia profunda do payload base para evitar modificações acidentais
-        payload = deepcopy(PAYLOAD_STRUCTURE)
-
-        # Modifica o payload para a entidade específica
-        # Acessa a lista de Conditions dentro do Where (assumindo que sempre existe)
-        # O payload original usa 'MUNICÍPIO DE FORTALEZA'
-        # Precisamos substituir isso pela official_entity_name correta
         try:
-            payload["queries"][0]["Query"]["Commands"][0][
+            # Ajustado o caminho para SemanticQueryDataShapeCommand
+            command_structure = payload["queries"][0]["Query"]["Commands"][0][
                 "SemanticQueryDataShapeCommand"
-            ]["Query"]["Where"][0]["Condition"]["In"]["Values"][0][0]["Literal"][
-                "Value"
-            ] = f"'{official_entity_name}'"
+            ]["Query"]
         except (KeyError, IndexError) as e:
             logger.error(
-                f"Erro ao modificar payload para entidade '{official_entity_name}'. "
-                f"Estrutura PAYLOAD_STRUCTURE inválida. Detalhes: {e}",
-                payload_structure=PAYLOAD_STRUCTURE,
+                f"Error accessing payload command structure: {e}. Payload might be malformed.",
+                exc_info=True,
+            )
+            raise ValueError("Payload command structure is not as expected.") from e
+
+        # PAYLOAD_STRUCTURE deve ter o Select correto. Não vamos reconstruí-lo dinamicamente por enquanto.
+        # Se for necessário, a lógica comentada para select_clauses pode ser reativada e ajustada.
+        # select_clauses = []
+        # for field_key, col_config in self.field_config_instance.field_mapping.items():
+        #     api_name = col_config.get("api_name")
+        #     if api_name:
+        #         select_clauses.append({
+        #             "Column": {
+        #                 "Expression": {"SourceRef": {"Source": "d"}},
+        #                 "Property": api_name,
+        #             },
+        #             "Name": f"dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.{api_name}"
+        #         })
+        # command_structure["Select"] = select_clauses
+
+        # Aplica OrderBy para paginação consistente
+        # Corrigida a sintaxe da list comprehension para OrderBy
+        command_structure["OrderBy"] = [
+            {
+                "Direction": 1,
+                "Expression": {
+                    "Column": {
+                        "Property": col_name,
+                        "Expression": {"SourceRef": {"Source": "d"}},
+                    }
+                },
+            }
+            for col_name in self.pagination_order_by_columns
+        ]
+
+        # Configurações de Binding, DataReduction, e Window
+        if "Binding" not in payload["queries"][0]:
+            payload["queries"][0]["Binding"] = {}
+        query_binding = payload["queries"][0]["Binding"]
+
+        if "DataReduction" not in query_binding:
+            query_binding["DataReduction"] = {}
+        data_reduction = query_binding["DataReduction"]
+
+        if "DataVolume" not in data_reduction:
+            data_reduction["DataVolume"] = 4
+
+        if "Window" not in data_reduction:
+            data_reduction["Window"] = {}
+        window = data_reduction["Window"]
+
+        effective_count = (
+            count
+            if count is not None and count > 0
+            else self.config_instance.batch_size
+        )
+        window["Count"] = effective_count
+
+        if restart_tokens:
+            window["RestartTokens"] = restart_tokens
+        elif "RestartTokens" in window:
+            del window["RestartTokens"]
+
+        # Filtro de Entidade e Ano
+        api_entity_name = get_api_entity_name(entity_slug_or_official_name)
+        if not api_entity_name:
+            logger.error(
+                f"Nome oficial da API não encontrado para: {entity_slug_or_official_name}"
             )
             raise ValueError(
-                f"Não foi possível definir a entidade no payload da requisição: {e}"
+                f"Slug ou nome da entidade inválido: {entity_slug_or_official_name}"
             )
 
-        # Modifica o payload para incluir o 'count' se fornecido
-        if count is not None:
+        if "Where" not in command_structure:
+            command_structure["Where"] = []
+
+        # Remover filtros de entidade preexistentes para evitar duplicidade ou conflito.
+        # Isso é crucial se o PAYLOAD_STRUCTURE base contiver um filtro de entidade padrão.
+        preserved_filters = []
+        entity_column_names = [
+            "dfslcp_nom_entidade_devedora",
+            "dfslcp_dsc_entidade",
+        ]  # Nomes comuns para colunas de entidade
+        for item_filter in command_structure["Where"]:
+            is_entity_filter = False
             try:
-                # Ajusta o Count para o número de registros desejado
-                payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Binding"]["DataReduction"]["Primary"]["Window"]["Count"] = count
-
-                # Ajusta o DataVolume. Se count for pequeno, podemos usar count.
-                # Para counts maiores, o DataVolume original (ex: 30) ou count pode ser usado.
-                # Vamos usar count aqui para simplificar, assumindo que a API lida bem.
-                # Se isso causar problemas (ex: menos registros que 'count' retornados),
-                # pode ser necessário manter DataVolume maior ou igual a Count.
-                # No nosso teste com 1 registro, DataVolume:3 e Count:1 funcionou.
-                # A estrutura original do PAYLOAD_STRUCTURE já tem DataVolume, podemos mantê-lo ou ajustá-lo.
-                # Por agora, vamos ajustar apenas o Window.Count que é o mais direto para o limite.
-                # Se count=1, idealmente DataVolume deve ser um pouco maior como 3, conforme descoberto.
-                # Vamos generalizar isso: se count for pequeno, aumentar DataVolume.
-                # Para um controle mais fino, essa lógica pode ser expandida.
-                # Por enquanto, focaremos no Window.Count.
-                # A estrutura do PAYLOAD_STRUCTURE já tem um DataReduction.DataVolume.
-                # Vamos também ajustar o DataReduction.DataVolume e o DataReduction.Primary.Count (se existir).
-
-                primary_binding = payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Binding"]
-
-                if "DataReduction" in primary_binding:
-                    if "DataVolume" in primary_binding["DataReduction"]:
-                        # Se count for 1, mantemos DataVolume 3. Caso contrário, pode ser count ou um valor maior.
-                        # A estrutura padrão tem 30. Vamos usar count, mas no mínimo 3.
-                        primary_binding["DataReduction"]["DataVolume"] = (
-                            max(count, 3) if count > 0 else 30
-                        )
-
-                    if (
-                        "Primary" in primary_binding["DataReduction"]
-                        and "Count" in primary_binding["DataReduction"]["Primary"]
-                    ):
-                        # Este 'Count' (não o Window.Count) às vezes é usado como um limite geral.
-                        primary_binding["DataReduction"]["Primary"]["Count"] = count
-
-                logger.info(f"Payload modificado para buscar {count} registros.")
-
-            except (KeyError, IndexError) as e:
-                logger.error(
-                    f"Erro ao tentar modificar o payload para o count: {e}. Usando payload padrão."
-                )
-                # payload permanece como a cópia do PAYLOAD_STRUCTURE original
-
-        # Lógica original para restart_tokens e paginação
-        if restart_tokens:
-            # Esta seção pode precisar de ajuste se a estrutura de RestartTokens não for sob "Window"
-            # no PAYLOAD_STRUCTURE quando buscamos múltiplos registros.
-            # Por enquanto, vamos assumir que a estrutura original do PAYLOAD_STRUCTURE em config.py
-            # (para múltiplos registros) tenha DataReduction.Primary.Window.
-            if (
-                "Window"
-                in payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Binding"]["DataReduction"]["Primary"]
-            ):
-                payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Binding"]["DataReduction"]["Primary"]["Window"]["RestartTokens"] = [
-                    restart_tokens
-                ]
-                payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Query"]["OrderBy"][0][
-                    "Direction"
-                ] = 2  # Ordem descendente para próxima página
-            else:
+                # Checa se o filtro atual é um filtro de entidade (Comparison)
+                if (
+                    item_filter.get("Condition", {})
+                    .get("Comparison", {})
+                    .get("Left", {})
+                    .get("Column", {})
+                    .get("Property")
+                    in entity_column_names
+                ):
+                    is_entity_filter = True
+                # Checa se o filtro atual é um filtro de entidade (In)
+                elif (
+                    item_filter.get("Condition", {}).get("In", {})
+                    and isinstance(item_filter["Condition"]["In"]["Expressions"], list)
+                    and len(item_filter["Condition"]["In"]["Expressions"]) > 0
+                    and item_filter["Condition"]["In"]["Expressions"][0]
+                    .get("Column", {})
+                    .get("Property")
+                    in entity_column_names
+                ):
+                    is_entity_filter = True
+            except (KeyError, TypeError, AttributeError):
                 logger.warning(
-                    "Estrutura de paginacao (Window) nao encontrada no PAYLOAD_STRUCTURE "
-                    "ao tentar aplicar restart_tokens."
+                    "Could not reliably determine if a filter is an entity filter due to structure.",
+                    filter_item=item_filter,
                 )
-        else:
-            # Para a primeira página, garantir a direção correta da ordenação (se houver)
-            if payload["queries"][0]["Query"]["Commands"][0][
-                "SemanticQueryDataShapeCommand"
-            ]["Query"].get("OrderBy"):
-                payload["queries"][0]["Query"]["Commands"][0][
-                    "SemanticQueryDataShapeCommand"
-                ]["Query"]["OrderBy"][0][
-                    "Direction"
-                ] = 1  # Ordem ascendente para primeira página
 
-        # Atualiza o nome da entidade na cláusula Where
-        payload["queries"][0]["Query"]["Commands"][0]["SemanticQueryDataShapeCommand"][
-            "Query"
-        ]["Where"][0]["Condition"]["In"]["Values"][0][0]["Literal"][
-            "Value"
-        ] = f"'{official_entity_name}'"
+            if not is_entity_filter:
+                preserved_filters.append(item_filter)
+            else:
+                logger.debug(f"Removing pre-existing entity filter: {item_filter}")
 
-        REQUESTS_TOTAL.labels(entity=official_entity_name).inc()
-        logger.info(
-            "Efetuando requisição para API Power BI",
-            payload_binding_details=payload["queries"][0]["Query"]["Commands"][0][
-                "SemanticQueryDataShapeCommand"
-            ]["Binding"],
+        command_structure["Where"] = preserved_filters
+        new_filters = list(
+            preserved_filters
+        )  # Começa com os filtros não-entidade preservados
+
+        # Adicionar o filtro de entidade correto, usando a estrutura "In" como no cURL
+        new_filters.append(
+            {
+                "Condition": {
+                    "In": {
+                        "Expressions": [
+                            {
+                                "Column": {
+                                    "Expression": {"SourceRef": {"Source": "d"}},
+                                    "Property": "dfslcp_dsc_entidade",  # Propriedade usada no cURL
+                                }
+                            }
+                        ],
+                        "Values": [[{"Literal": {"Value": f"'{api_entity_name}'"}}]],
+                    }
+                }
+            }
         )
-        response = self.session.post(self.api_url, json=payload, timeout=30)
-        response.raise_for_status()
+        logger.debug(
+            f"Added new entity filter for '{api_entity_name}' on property 'dfslcp_dsc_entidade' using 'In' structure."
+        )
 
-        response_json = response.json()
-        return response_json
+        # Filtros de ano
+        # Remove qualquer filtro de ano existente dos new_filters antes de adicionar o novo (se houver)
+        filters_without_year = [
+            f
+            for f in new_filters
+            if not (
+                f.get("Condition", {})
+                .get("Comparison", {})
+                .get("Left", {})
+                .get("Column", {})
+                .get("Property")
+                == "dfslcp_num_ano_orcamento"
+            )
+        ]
+        new_filters = filters_without_year
 
-    def _get_base_field_name(self, api_name_str: str) -> str:
-        if not isinstance(api_name_str, str):
-            # Attempt to convert to string if it's not, though descriptor names should be strings
-            return str(api_name_str)
+        if year is not None:
+            new_filters.append(
+                {
+                    "Condition": {
+                        "Comparison": {
+                            "ComparisonKind": 0,  # Equals
+                            "Left": {
+                                "Column": {
+                                    "Expression": {"SourceRef": {"Source": "d"}},
+                                    "Property": "dfslcp_num_ano_orcamento",
+                                }
+                            },
+                            "Right": {
+                                "Literal": {
+                                    "Value": f"{year}L"
+                                }  # L para tipo Long/Integer
+                            },
+                        }
+                    }
+                }
+            )
+            logger.debug(f"Added year filter: {year}")
+        else:
+            logger.debug("No year filter applied as year was not provided.")
 
-        # Remove "Sum(...)" or similar aggregations like "Min(...)", "Max(...)", etc.
-        # and also handles simple "Table.Column" by extracting "Column"
-        # e.g. Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ano_orcamento) -> dfslcp_num_ano_orcamento
-        # e.g. dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_dsc_proc_precatorio -> dfslcp_dsc_proc_precatorio
-        match = re.match(
-            r"^[A-Za-z_0-9]+\\(([^)]+)\\)$", api_name_str
-        )  # Matches Agg(Content)
-        if match:
-            content_inside_agg = match.group(1)
-            if "." in content_inside_agg:
-                return content_inside_agg.split(".")[-1]
-            return content_inside_agg
+        command_structure["Where"] = new_filters
+        logger.debug(f"Final filters for Where clause: {command_structure['Where']}")
 
-        if "." in api_name_str:
-            return api_name_str.split(".")[-1]
-        return api_name_str
+        logger.debug(
+            "Final payload generated",
+            entity=api_entity_name,
+            count=effective_count,
+            year=year,
+            has_restart_tokens=bool(restart_tokens),
+        )
+        return payload
+
+    @track_time
+    def fetch_all_precatorios_data(
+        self,
+        entity_slug_or_official_name: str,
+        count_per_page: Optional[int] = None,
+        year: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Busca todos os dados de precatórios para uma entidade, paginando automaticamente."""
+        api_entity_name = get_api_entity_name(entity_slug_or_official_name)
+        if not api_entity_name:
+            logger.error(
+                "entity_not_found_in_mapping", entity=entity_slug_or_official_name
+            )
+            return []
+
+        all_normalized_rows: List[Dict[str, Any]] = []
+        current_restart_tokens: Optional[List[Any]] = None
+        page_num = 0
+        processed_records_for_entity = 0
+        batch_size = (
+            count_per_page
+            if count_per_page is not None
+            else self.config_instance.batch_size
+        )
+
+        logger.info(
+            "starting_full_fetch",
+            entity=api_entity_name,
+            batch_size=batch_size,
+            year_filter=year,
+        )
+
+        while True:
+            page_num += 1
+            logger.info(
+                "fetching_page",
+                entity=api_entity_name,
+                page=page_num,
+                current_total_fetched=len(all_normalized_rows),
+                has_restart_tokens=bool(current_restart_tokens),
+            )
+            try:
+                page_data_response = self._fetch_page(
+                    entity=api_entity_name,
+                    restart_tokens=current_restart_tokens,
+                    count=batch_size,
+                    year=year,
+                )
+                if (
+                    not page_data_response
+                    or "results" not in page_data_response
+                    or not page_data_response["results"]
+                ):
+                    logger.warning(
+                        "empty_or_invalid_response_from_api",
+                        entity=api_entity_name,
+                        page=page_num,
+                    )
+                    break
+
+                # A função normalize_to_rows espera uma lista de respostas de página
+                normalized_page_rows = self.normalize_to_rows([page_data_response])
+
+                if not normalized_page_rows:  # Se a normalização não retornar linhas
+                    raw_data_present = bool(
+                        page_data_response["results"][0]
+                        .get("result", {})
+                        .get("data", {})
+                        .get("dsr", {})
+                        .get("DS", [{}])[0]
+                        .get("ValueDicts")
+                    )
+                    if raw_data_present:
+                        logger.info(
+                            "page_had_raw_data_but_normalized_to_empty",
+                            entity=api_entity_name,
+                            page=page_num,
+                        )
+                    else:
+                        logger.info(
+                            "no_more_records_or_empty_page_after_normalization",
+                            entity=api_entity_name,
+                            page=page_num,
+                        )
+                    break  # Interrompe se não houver mais dados normalizados
+
+                all_normalized_rows.extend(normalized_page_rows)
+                processed_records_for_entity += len(normalized_page_rows)
+                RECORDS_PROCESSED.labels(entity=api_entity_name).inc(
+                    len(normalized_page_rows)
+                )
+                logger.info(
+                    "page_processed_and_normalized",
+                    entity=api_entity_name,
+                    page=page_num,
+                    recs_in_page=len(normalized_page_rows),
+                    total_recs=processed_records_for_entity,
+                )
+
+                try:
+                    new_restart_tokens = page_data_response["results"][0]["result"][
+                        "data"
+                    ]["dsr"]["DS"][0].get("RT")
+                    if new_restart_tokens:
+                        if new_restart_tokens == current_restart_tokens:
+                            logger.warning(
+                                "duplicate_restart_tokens_received_stopping",
+                                entity=api_entity_name,
+                                page=page_num,
+                            )
+                            break
+                        current_restart_tokens = new_restart_tokens
+                        logger.debug(
+                            "next_restart_tokens_found_for_next_page",
+                            entity=api_entity_name,
+                            page=page_num,
+                        )
+                    else:
+                        logger.info(
+                            "no_restart_tokens_in_response_ends_pagination",
+                            entity=api_entity_name,
+                            page=page_num,
+                        )
+                        break
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.warning(
+                        "error_extracting_restart_tokens_from_response",
+                        entity=api_entity_name,
+                        page=page_num,
+                        error=str(e),
+                    )
+                    break
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    "fetch_page_request_failed_halting_pagination",
+                    entity=api_entity_name,
+                    page=page_num,
+                    error=str(e),
+                )
+                break
+            except Exception as e:
+                logger.error(
+                    "unexpected_error_in_pagination_loop_halting",
+                    entity=api_entity_name,
+                    page=page_num,
+                    error=str(e),
+                    exc_info=True,
+                )
+                break
+
+        logger.info(
+            "finished_full_precatorios_fetch",
+            entity=api_entity_name,
+            pages_fetched=page_num,
+            total_recs_aggregated=len(all_normalized_rows),
+        )
+        return all_normalized_rows
 
     def normalize_to_rows(self, resp_json_pages: List[Dict]) -> List[Dict]:
         """Normaliza os dados JSON da API para uma lista de dicionários (linhas)."""
@@ -656,7 +801,7 @@ class PrecatoriosCrawler:
 
                         if len(current_c_values) != len(s_schema):
                             logger.error(
-                                f"Pág{page_index},L{i}(base):C({len(current_c_values)})&S({len(s_schema)})len mismatch.Skip."
+                                f"Pág{page_index},L{i}(base):C/S len mismatch. C:{len(current_c_values)},S:{len(s_schema)}.Skip."
                             )
                             last_processed_pydantic_row = {}
                             continue
@@ -669,10 +814,10 @@ class PrecatoriosCrawler:
                                 continue
                             raw_value_for_field = current_c_values[col_idx]
                             # Obter informações do descritor global e mapeamento CSV
-                            # O índice 'col_idx' aqui é o mesmo para s_schema, current_c_values e global_descriptor_selects
+                            # O índice 'col_idx' é o mesmo para s_schema, current_c_values e global_descriptor_selects
                             if col_idx >= len(global_descriptor_selects):
                                 logger.warning(
-                                    f"Pág {page_index}, L{i}, Col {col_idx}: Índice fora dos limites para global_descriptor_selects. Pulando campo."
+                                    f"Pág{page_index},L{i},C{col_idx}: Idx OOB for global_descriptors. Skip field."
                                 )
                                 continue
 
@@ -685,7 +830,7 @@ class PrecatoriosCrawler:
                             csv_field_cfg = api_name_to_csv_field_map.get(base_api_name)
 
                             if not csv_field_cfg:
-                                # logger.debug(f"Pág {page_index}, Linha {i}, Col {col_idx}: API name '{base_api_name}' não mapeado para CSV.")
+                                # logger.debug(f"Pág{page_index},L{i},C{col_idx}: API name '{base_api_name}' not mapped. Skip field.")
                                 continue
 
                             target_csv_field = csv_field_cfg["csv_field"]
@@ -739,12 +884,12 @@ class PrecatoriosCrawler:
                             not s_schema
                         ):  # s_schema deve ter sido definido pela primeira linha
                             logger.error(
-                                f"Pág {page_index}, Linha {i} (delta): Schema 'S' da primeira linha não disponível. Pulando página."
+                                f"Pág{page_index},L{i}(delta): Schema 'S' from base row not available. Skip page."
                             )
                             break
                         if not last_processed_pydantic_row:
                             logger.error(
-                                f"Pág {page_index}, Linha {i} (delta): Linha base anterior não processada. Pulando."
+                                f"Pág{page_index},L{i}(delta): Linha base anterior não processada. Pulando."
                             )
                             continue
 
@@ -759,7 +904,7 @@ class PrecatoriosCrawler:
                             current_c_values_delta = raw_row_data_container.get("C", [])
 
                             logger.debug(
-                                f"Pág {page_index}, L{i} Delta: R={rulifier_r} ({bin(rulifier_r)}), C_delta={current_c_values_delta}"
+                                f"Pág{page_index},L{i} Delta: R={rulifier_r}({bin(rulifier_r)}), C_delta={current_c_values_delta}"
                             )
 
                             for col_idx, schema_item in enumerate(s_schema):
@@ -767,7 +912,7 @@ class PrecatoriosCrawler:
                                     global_descriptor_selects
                                 ):  # Segurança
                                     logger.warning(
-                                        f"Pág {page_index}, L{i} Delta, Col {col_idx}: Índice fora dos limites para global_descriptors. Pulando campo."
+                                        f"Pág{page_index},L{i} Delta,C{col_idx}: Idx OOB for global_descriptors. Skip field."
                                     )
                                     continue
 
@@ -782,7 +927,7 @@ class PrecatoriosCrawler:
                                 )
 
                                 if not csv_field_cfg:
-                                    # logger.debug(f"Pág {page_index}, L{i} Delta, Col {col_idx}: API name '{base_api_name}' não mapeado.")
+                                    # logger.debug(f"Pág{page_index},L{i} Delta,C{col_idx}: API name '{base_api_name}' not mapped. Skip.")
                                     continue
 
                                 target_csv_field = csv_field_cfg["csv_field"]
@@ -803,9 +948,8 @@ class PrecatoriosCrawler:
                                     )
                                 else:  # Bit é 0, Novo valor de C_delta
                                     if c_delta_idx >= len(current_c_values_delta):
-                                        logger.error(
-                                            f"Pág{page_index},L{i}Del({target_csv_field}):R bit0,"
-                                            f"C_delta({current_c_values_delta})OOB(idx{c_delta_idx}).Herdou."
+                                        logger.warning(
+                                            f"Pág{page_index},L{i}Del({target_csv_field}):VD'{dict_name}',C_del idx OOB. Inherit."
                                         )
                                         pydantic_input_row[target_csv_field] = (
                                             last_processed_pydantic_row.get(
@@ -886,7 +1030,7 @@ class PrecatoriosCrawler:
                                                 decoded, target_field_type
                                             )
                                         )
-                                    # Se resolved_value for False (devido a erro de VD), o campo já foi definido para herdar
+                                    # Se resolved_value for False (erro de VD), o campo já foi setado para herdar.
 
                         last_processed_pydantic_row = pydantic_input_row.copy()
 
@@ -1045,11 +1189,7 @@ class PrecatoriosCrawler:
                 "erro_escrever_csv", error=str(e), output_file=out_file, exc_info=True
             )
 
-    @track_time(
-        entity=lambda self_or_args, *args, **kwargs: (
-            args[0] if args else config.default_entity
-        )
-    )
+    @track_time
     def crawl(self, entity_slug: str, out_file: str):
         """Executa o processo completo de crawling para uma entidade."""
         try:
@@ -1058,7 +1198,7 @@ class PrecatoriosCrawler:
             # Busca os dados
             # Para o crawl completo, não especificamos 'count', então ele tentará buscar tudo com paginação.
             logger.info("fetching_data", entity=entity_slug)
-            raw_data = self.fetch_data(
+            raw_data = self.fetch_all_precatorios_data(
                 entity_slug
             )  # Não passa count aqui para buscar tudo
 
@@ -1096,3 +1236,19 @@ class PrecatoriosCrawler:
                 exc_info=True,
             )
             raise
+
+    def _get_base_field_name(self, api_name_str: str) -> str:
+        """Obtém o nome base do campo a partir do nome da API."""
+        # Ex: 'Sum(dfslcp_SAPRE_LISTA_CRONO_PRECATORIO.dfslcp_num_ano_orcamento)' -> 'dfslcp_num_ano_orcamento'
+        match = re.match(
+            r"^[A-Za-z_0-9]+\\(([^)]+)\\)$", api_name_str
+        )  # Matches Agg(Content)
+        if match:
+            content_inside_agg = match.group(1)
+            if "." in content_inside_agg:
+                return content_inside_agg.split(".")[-1]
+            return content_inside_agg
+
+        if "." in api_name_str:
+            return api_name_str.split(".")[-1]
+        return api_name_str

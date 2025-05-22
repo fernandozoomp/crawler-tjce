@@ -15,6 +15,7 @@ import os
 from io import StringIO
 import tempfile
 from datetime import datetime
+import requests
 
 from crawler import PrecatoriosCrawler
 from entity_mapping_crawler import EntityMappingCrawler
@@ -87,7 +88,11 @@ api = Api(
     app,
     version="1.0",
     title="Crawler TJCE - Precatorios",
-    description="API para consulta e extração de dados de precatórios do Tribunal de Justiça do Estado do Ceará (TJCE). Permite listar entidades, buscar precatórios por entidade e obter os dados em formato CSV via Pinata.",
+    description=(
+        "API para consulta e extração de dados de precatórios do Tribunal de Justiça "
+        "do Estado do Ceará (TJCE). Permite listar entidades, buscar precatórios por "
+        "entidade e obter os dados em formato CSV via Pinata."
+    ),
     doc="/docs",
 )
 
@@ -96,6 +101,33 @@ ns = api.namespace("api", description="Operações da API de Precatórios do TJC
 
 # Configuração do cache
 cache = Cache(app)
+
+# Modelo para os argumentos de query da rota /fetch, para documentação e validação
+fetch_precatorios_parser = ns.parser()
+fetch_precatorios_parser.add_argument(
+    "entity",
+    type=str,
+    required=True,
+    help="Slug da entidade para buscar precatórios. Ex: municipio-de-fortaleza",
+    location="args",
+)
+fetch_precatorios_parser.add_argument(
+    "count",
+    type=int,
+    help=(
+        "Número de registros a serem retornados por página durante a busca paginada no backend. "
+        "Se não fornecido, o crawler usará um valor padrão (ex: 500). "
+        "A API sempre tentará buscar TODOS os registros da entidade, paginando no backend."
+    ),
+    location="args",
+    default=500,  # Mantém o default que o frontend já espera
+)
+fetch_precatorios_parser.add_argument(
+    "year",
+    type=int,
+    help="Filtra os precatórios por ano de orçamento específico.",
+    location="args",
+)
 
 # Configuração do Swagger UI para Flask-RESTX
 authorizations = {"apikey": {"type": "apiKey", "in": "header", "name": "X-API-KEY"}}
@@ -350,193 +382,159 @@ class Entidades(Resource):
 
 @ns.route("/fetch")
 class FetchPrecatorios(Resource):
+    """Busca e retorna precatórios para uma entidade específica."""
+
     @limiter.limit(config.rate_limit_fetch)
-    @api.expect(fetch_query_model_fields)
-    @api.marshal_with(precatorio_response_model_fields)
+    @ns.expect(fetch_precatorios_parser)  # Usa o parser para os argumentos GET
+    @ns.marshal_with(precatorio_response_model_fields)
     def get(self):
-        """Busca precatórios para uma entidade devedora específica e fornece um CSV com os dados via Pinata. Permite limitar a quantidade de registros."""
-        args = request.args
+        """Busca precatórios com base no slug da entidade e opcionalmente no ano.
+
+        A API agora busca todos os precatórios da entidade, lidando com paginação internamente.
+        O parâmetro 'count' influencia o tamanho da página durante essa busca interna.
+        """
+        args = (
+            fetch_precatorios_parser.parse_args()
+        )  # Obtém os argumentos da query string
         entity_slug = args.get("entity")
-        count_str = args.get("count")
+        # O parâmetro 'count' da requisição será usado como 'count_per_page' no crawler.
+        # Se 'count' não for fornecido na URL, o parser define default 500.
+        # Se o usuário explicitamente passar count=0 ou um valor inválido,
+        # o crawler.fetch_all_precatorios_data usará seu próprio default_batch_size.
+        count_per_page_for_crawler = args.get("count")
+        year_filter = args.get("year")
 
-        # Define o valor padrão para count se não for fornecido ou for inválido
-        DEFAULT_COUNT = 500
-        count = DEFAULT_COUNT
-
-        if count_str:
-            try:
-                parsed_count = int(count_str)
-                if parsed_count > 0:
-                    count = parsed_count
-                else:
-                    logger.warning(
-                        f"Valor de 'count' inválido fornecido: {count_str}. Usando default: {DEFAULT_COUNT}."
-                    )
-                    # count já é DEFAULT_COUNT, então não precisa reatribuir
-            except ValueError:
-                logger.warning(
-                    f"Valor de 'count' não é um inteiro válido: {count_str}. Usando default: {DEFAULT_COUNT}."
-                )
-                # count já é DEFAULT_COUNT
-        else:
-            logger.info(f"Nenhum 'count' fornecido. Usando default: {DEFAULT_COUNT}")
-            # count já é DEFAULT_COUNT
+        logger.info(
+            "fetch_precatorios_request_received",
+            entity_slug=entity_slug,
+            requested_batch_size=count_per_page_for_crawler,
+            year_filter=year_filter,
+        )
 
         if not entity_slug:
-            logger.error("Parâmetro 'entity' ausente na requisição /api/fetch.")
-            return (
-                PrecatorioResponse(
-                    status="error",
-                    message="Parâmetro 'entity' é obrigatório.",
-                    data=[],
-                    num_precatorios_found=0,
-                ).dict(),
-                400,
-            )
+            logger.warning("fetch_api_called_without_entity_slug")
+            message = "O parâmetro 'entity' (slug da entidade) é obrigatório."
+            api.abort(400, message)
 
         if not validate_entity_slug(entity_slug):
-            logger.error(f"Slug de entidade inválido fornecido: {entity_slug}")
-            return (
-                PrecatorioResponse(
-                    status="error",
-                    message=f"Slug de entidade inválido: {entity_slug}",
-                    data=[],
-                    num_precatorios_found=0,
-                ).dict(),
-                400,
-            )
+            logger.warning("invalid_entity_slug_provided", slug=entity_slug)
+            # Tenta encontrar um slug válido se um nome oficial foi passado por engano
+            possible_slug = get_entity_slug(
+                entity_slug
+            )  # Tenta converter nome para slug
+            if possible_slug and validate_entity_slug(possible_slug):
+                logger.info(
+                    f"Nome '{entity_slug}' convertido para slug válido: '{possible_slug}'"
+                )
+                entity_slug = possible_slug
+            else:
+                logger.error(
+                    f"Slug de entidade inválido ou não encontrado: {entity_slug}"
+                )
+                message = f"Slug de entidade inválido ou não encontrado: {entity_slug}"
+                api.abort(400, message)
 
         official_entity_name = get_api_entity_name(entity_slug)
         if not official_entity_name:
-            logger.error(
-                f"Não foi possível encontrar o nome oficial para o slug: {entity_slug}"
-            )
-            return (
-                PrecatorioResponse(
-                    status="error",
-                    message=f"Nome oficial não encontrado para o slug: {entity_slug}",
-                    data=[],
-                    num_precatorios_found=0,
-                ).dict(),
-                404,
-            )
-
-        logger.info(
-            f"Endpoint /fetch chamado para entidade: {official_entity_name} (slug: {entity_slug}), count: {count}"
-        )
-
-        temp_dir = tempfile.mkdtemp()
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        csv_filename = f"precatorios_{entity_slug}_{timestamp}.csv"
-        temp_csv_path = os.path.join(temp_dir, csv_filename)
+            logger.error(f"Nome oficial não encontrado para o slug: {entity_slug}")
+            message = f"Nome oficial não encontrado para o slug: {entity_slug}"
+            api.abort(404, message)
 
         try:
-            raw_data = crawler.fetch_data(
-                entity_slug_or_official_name=entity_slug, count=count
-            )  # Passa o slug
-
-            if not raw_data:
-                logger.warning(
-                    f"Nenhum dado bruto retornado pela API do TJCE para {official_entity_name}."
-                )
-                msg = f"Nenhum dado encontrado na fonte para a entidade: {official_entity_name}."
-                if count is not None:
-                    msg += f" (limite de {count} registros)"
-                return (
-                    PrecatorioResponse(
-                        status="warning", message=msg, data=[], num_precatorios_found=0
-                    ).dict(),
-                    200,
-                )
-
-            # A normalização agora espera uma lista de páginas
-            rows = crawler.normalize_to_rows([raw_data])
-            num_found = len(rows)
-
-            if not rows:
-                logger.info(
-                    f"Nenhum precatório normalizado para {official_entity_name} (slug: {entity_slug})."
-                )
-                msg = f"Nenhum precatório encontrado e normalizado para a entidade: {official_entity_name}."
-                if count is not None:
-                    msg += f" (limite de {count} registros)"
-                return (
-                    PrecatorioResponse(
-                        status="warning", message=msg, data=[], num_precatorios_found=0
-                    ).dict(),
-                    200,
-                )
-
-            crawler.write_csv(rows, temp_csv_path)
-            logger.info(
-                f"{num_found} registros normalizados e salvos em {temp_csv_path} para {entity_slug}"
+            # Chama fetch_all_precatorios_data para buscar todos os dados com paginação interna
+            # O count_per_page_for_crawler (vindo do 'count' da URL) define o tamanho do batch no crawler
+            all_rows = crawler.fetch_all_precatorios_data(
+                entity_slug_or_official_name=official_entity_name,
+                count_per_page=count_per_page_for_crawler,
+                year=year_filter,
             )
 
-            pinata_url = None
-            logger.info(
-                f"Verificando condições para upload no Pinata (Precatórios): JWT_EXISTS={bool(config.pinata_api_jwt)}, FILE_EXISTS={os.path.exists(temp_csv_path)}"
-            )
-            if config.pinata_api_jwt and os.path.exists(temp_csv_path):
+            if not all_rows:
                 logger.info(
-                    f"Tentando upload de {temp_csv_path} para Pinata como {csv_filename}"
+                    "no_precatorios_found_for_entity",
+                    entity_slug=entity_slug,
+                    year=year_filter,
                 )
+                year_msg = f"ano {year_filter if year_filter else 'não aplicado'}"
+                message = f"Nenhum precatório para '{official_entity_name}' ({entity_slug}) {year_msg}."
+                return {
+                    "status": "success",
+                    "message": message,
+                    "data": [],
+                    "pinata_url": None,
+                    "num_precatorios_found": 0,
+                }, 200
+
+            logger.info(
+                f"{len(all_rows)} precatórios encontrados para '{official_entity_name}' "
+                f"(slug: {entity_slug})."
+            )
+
+            # Gera o nome do arquivo CSV e o caminho temporário
+            timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
+            normalized_entity_slug_for_filename = entity_slug.replace("-", "_")
+            csv_filename = (
+                f"precatorios_{normalized_entity_slug_for_filename}_{timestamp_str}.csv"
+            )
+
+            # Cria um diretório temporário seguro para o arquivo CSV
+            with tempfile.TemporaryDirectory() as tmpdir:
+                csv_temp_path = os.path.join(tmpdir, csv_filename)
+
+                logger.info(f"Escrevendo CSV em: {csv_temp_path}")
+                crawler.write_csv(all_rows, csv_temp_path)
+
+                logger.info(f"Upload do CSV para Pinata: {csv_filename}")
                 pinata_url = upload_and_get_pinata_url(
-                    local_file_path=temp_csv_path,
+                    local_file_path=csv_temp_path,
                     file_name_for_pinata=csv_filename,
                     pinata_jwt=config.pinata_api_jwt,
-                    pinata_metadata={
-                        "entity_slug": entity_slug,
-                        "type": "precatorios",
-                        "count_filter": count,
-                    },
                 )
-                if pinata_url:
-                    logger.info(f"Upload para Pinata bem-sucedido: {pinata_url}")
-                else:
-                    logger.warning(
-                        f"Falha no upload do arquivo de precatórios para o Pinata: {temp_csv_path}"
-                    )
 
-            response_message = f"{num_found} precatório(s) encontrado(s) e processado(s) para {official_entity_name}."
-            if count is not None:
-                response_message += f" (Limite de busca: {count})"
+            if pinata_url:
+                logger.info("CSV no Pinata com sucesso", pinata_url=pinata_url)
+                message = f"Precatórios para '{official_entity_name}' ({entity_slug}) recuperados. CSV disponível."
+                return {
+                    "status": "success",
+                    "message": message,
+                    "data": all_rows,  # Retorna os dados completos na resposta JSON também
+                    "pinata_url": pinata_url,
+                    "num_precatorios_found": len(all_rows),
+                }, 200
+            else:
+                logger.error("Falha no upload para Pinata. Servindo apenas dados.")
+                message = f"Precatórios para '{official_entity_name}' ({entity_slug}) recuperados. Upload Pinata falhou."
+                return {
+                    "status": "warning",
+                    "message": message,
+                    "data": all_rows,
+                    "pinata_url": None,
+                    "num_precatorios_found": len(all_rows),
+                }, 200
 
-            return (
-                PrecatorioResponse(
-                    status="success",
-                    message=response_message,
-                    data=rows,  # Alterado: Usar 'rows' diretamente, pois já são dicts serializados
-                    pinata_url=pinata_url,
-                    num_precatorios_found=num_found,  # Novo campo adicionado
-                ).dict(),
-                200,
+        except ValueError as ve:
+            logger.error(
+                f"value_error_fetching_precatorios: {ve}",
+                entity_slug=entity_slug,
+                exc_info=True,
             )
-
+            api.abort(400, str(ve))
+        except requests.exceptions.RequestException as re:
+            logger.error(
+                f"request_exception_fetching_precatorios: {re}",
+                entity_slug=entity_slug,
+                exc_info=True,
+            )
+            error_message = f"Erro de comunicação com a API externa: {re}"
+            api.abort(503, error_message)
         except Exception as e:
             logger.error(
-                f"Erro ao processar precatórios para {entity_slug}: {e}", exc_info=True
+                f"unexpected_error_fetching_precatorios: {e}",
+                entity_slug=entity_slug,
+                exc_info=True,
             )
-            return (
-                PrecatorioResponse(
-                    status="error",
-                    message=f"Erro interno ao processar precatórios: {str(e)}",
-                    data=[],
-                    num_precatorios_found=0,
-                ).dict(),
-                500,
-            )
-        finally:
-            if os.path.exists(temp_dir):
-                try:
-                    for f_name in os.listdir(temp_dir):
-                        os.remove(os.path.join(temp_dir, f_name))
-                    os.rmdir(temp_dir)
-                    logger.info(f"Diretório temporário {temp_dir} limpo.")
-                except Exception as e_clean:
-                    logger.error(
-                        f"Erro ao limpar diretório temporário {temp_dir}: {e_clean}",
-                        exc_info=True,
-                    )
+            error_message = f"Erro inesperado ao processar a solicitação: {e}"
+            api.abort(500, error_message)
 
 
 def cli():
