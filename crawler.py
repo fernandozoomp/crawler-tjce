@@ -315,7 +315,7 @@ class PrecatoriosCrawler:
             # Ajustado o caminho para SemanticQueryDataShapeCommand
             command_structure = payload["queries"][0]["Query"]["Commands"][0][
                 "SemanticQueryDataShapeCommand"
-            ]["Query"]
+            ]
         except (KeyError, IndexError) as e:
             logger.error(
                 f"Error accessing payload command structure: {e}. Payload might be malformed.",
@@ -339,7 +339,6 @@ class PrecatoriosCrawler:
         # command_structure["Select"] = select_clauses
 
         # Aplica OrderBy para paginação consistente
-        # Corrigida a sintaxe da list comprehension para OrderBy
         command_structure["OrderBy"] = [
             {
                 "Direction": 1,
@@ -353,33 +352,34 @@ class PrecatoriosCrawler:
             for col_name in self.pagination_order_by_columns
         ]
 
-        # Configurações de Binding, DataReduction, e Window
-        if "Binding" not in payload["queries"][0]:
-            payload["queries"][0]["Binding"] = {}
-        query_binding = payload["queries"][0]["Binding"]
-
-        if "DataReduction" not in query_binding:
-            query_binding["DataReduction"] = {}
-        data_reduction = query_binding["DataReduction"]
-
-        if "DataVolume" not in data_reduction:
-            data_reduction["DataVolume"] = 4
-
-        if "Window" not in data_reduction:
-            data_reduction["Window"] = {}
-        window = data_reduction["Window"]
+        # Configurações de Binding, DataReduction, e Window no local correto
+        try:
+            binding_for_window = command_structure["Binding"]
+            data_reduction = binding_for_window["DataReduction"]
+            primary_reduction = data_reduction["Primary"]
+            window_to_modify = primary_reduction["Window"]
+        except KeyError as e:
+            logger.error(
+                f"Estrutura de payload esperada não encontrada ao tentar acessar Window: {e}. "
+                f"Verifique PAYLOAD_STRUCTURE em config.py. "
+                f"Caminho esperado: SemanticQueryDataShapeCommand.Binding.DataReduction.Primary.Window",
+                exc_info=True,
+            )
+            raise ValueError(
+                f"Estrutura de payload inválida para Window, chave ausente: {e}"
+            )
 
         effective_count = (
             count
             if count is not None and count > 0
             else self.config_instance.batch_size
         )
-        window["Count"] = effective_count
+        window_to_modify["Count"] = effective_count
 
         if restart_tokens:
-            window["RestartTokens"] = restart_tokens
-        elif "RestartTokens" in window:
-            del window["RestartTokens"]
+            window_to_modify["RestartTokens"] = restart_tokens
+        elif "RestartTokens" in window_to_modify:
+            del window_to_modify["RestartTokens"]
 
         # Filtro de Entidade e Ano
         api_entity_name = get_api_entity_name(entity_slug_or_official_name)
