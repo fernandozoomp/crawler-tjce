@@ -3,6 +3,7 @@
 
 # ambiente virtual
 venv/
+.venv/
 
 # arquivos de saída
 *.log
