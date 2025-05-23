@@ -1,4 +1,4 @@
-Flask==2.3.3
+Flask>=3.0.0
 requests==2.31.0
 python-dotenv==1.0.1
 pydantic~=1.10.0
@@ -8,5 +8,4 @@ flask-caching==2.1.0
 flask-limiter==3.5.0
 flask-compress==1.14
 structlog==24.1.0
-prometheus-client==0.20.0
-Werkzeug==2.2.3 
+prometheus-client==0.20.0 
