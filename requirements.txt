@@ -7,6 +7,6 @@ flask-restx @ git+https://github.com/python-restx/flask-restx.git
 flask-caching==2.1.0
 flask-limiter==3.5.0
 flask-compress==1.14
-structlog==2.4.1.0
+structlog==24.1.0
 prometheus-client==0.20.0
 Werkzeug>=3.0.0 
