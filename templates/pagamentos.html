@@ -65,22 +65,41 @@
             box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
         }
         .back-button {
-            background-color: #6c757d;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #2c3e50;
+            border: 2px solid #667eea;
+            padding: 10px 15px;
+            border-radius: 50px;
             cursor: pointer;
-            margin-top: 20px;
+            font-size: 14px;
+            font-weight: 600;
             text-decoration: none;
-            display: inline-block;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
+
         .back-button:hover {
-            background-color: #5a6268;
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
         }
+
+        .back-button::before {
+            content: "←";
+            font-size: 16px;
+        }
+
     </style>
 </head>
 <body>
+    <a href="/" class="back-button">Voltar</a>
+
     <header class="header">
         <h1>🏛️ Consulta de Pagamentos - TJCE</h1>
     </header>
@@ -93,7 +112,6 @@
                 Esta funcionalidade estará disponível em breve.<br>
                 Aguardando integração com a API específica de pagamentos realizados.
             </div>
-            <a href="/" class="back-button">← Voltar à Página Inicial</a>
         </div>
     </div>
 
