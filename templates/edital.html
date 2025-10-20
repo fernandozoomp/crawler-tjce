@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Editais TJCE</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .header {
+            background-color: #001f3f;
+            color: white;
+            padding: 15px 30px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.8em;
+        }
+        .container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .content {
+            max-width: 800px;
+            padding: 30px;
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+        .content h2 {
+            color: #001f3f;
+            margin-bottom: 20px;
+        }
+        .status-message {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .info-message {
+            background-color: #e7f3fe;
+            border: 1px solid #d0eaff;
+            color: #0c5460;
+        }
+        .footer {
+            background-color: #343a40;
+            color: #f8f9fa;
+            text-align: center;
+            padding: 15px 30px;
+            font-size: 0.9em;
+            box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
+        }
+        .back-button {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .back-button:hover {
+            background-color: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>🏛️ Consulta de Editais - TJCE</h1>
+    </header>
+
+    <div class="container">
+        <div class="content">
+            <h2>📄 Consulta de Editais</h2>
+            <div class="status-message info-message">
+                <strong>Em desenvolvimento</strong><br>
+                Esta funcionalidade estará disponível em breve.<br>
+                Aguardando integração com a API específica de editais.
+            </div>
+            <a href="/" class="back-button">← Voltar à Página Inicial</a>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>&copy; 2025 Sistema TJCE - Em desenvolvimento</p>
+    </footer>
+</body>
+</html>

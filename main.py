@@ -49,8 +49,16 @@ app = Flask(__name__)
 # Rota para a página inicial (definida ANTES da inicialização do Flask-RESTX Api)
 @app.route("/")
 def home():
-    """Serve a página inicial."""
-    logger.info("Servindo página inicial (index.html)")
+    """Serve a nova página inicial com seleção de tipos de dados."""
+    logger.info("Servindo página inicial (home.html)")
+    return render_template("home.html")
+
+
+# Rota para a página de ordem cronológica (consulta de precatórios)
+@app.route("/cronologica")
+def cronologica():
+    """Serve a página de consulta de precatórios em ordem cronológica."""
+    logger.info("Servindo página de ordem cronológica (index.html)")
     # Preparar a lista de entidades a partir do ENTITY_MAPPING
     # Formato: [{'slug': '...', 'official_name': '...'}]
     entities_list_for_frontend = sorted(
@@ -61,6 +69,22 @@ def home():
         key=lambda x: x["official_name"],  # Ordenar pelo nome oficial
     )
     return render_template("index.html", entities_list=entities_list_for_frontend)
+
+
+# Rota para a página de editais (placeholder - será implementada quando API for fornecida)
+@app.route("/edital")
+def edital():
+    """Serve a página de consulta de editais."""
+    logger.info("Servindo página de editais (edital.html)")
+    return render_template("edital.html")
+
+
+# Rota para a página de pagamentos realizados (placeholder - será implementada quando API for fornecida)
+@app.route("/pagamentos")
+def pagamentos():
+    """Serve a página de consulta de pagamentos realizados."""
+    logger.info("Servindo página de pagamentos (pagamentos.html)")
+    return render_template("pagamentos.html")
 
 
 app.config["JSON_AS_ASCII"] = False  # Permite caracteres UTF-8 no JSON
