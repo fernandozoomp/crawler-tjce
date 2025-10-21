@@ -3,11 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consulta de Pagamentos TJCE</title>
+    <title>TJCE</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: sans-serif;
-            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             margin: 0;
             color: #333;
             display: flex;
@@ -23,39 +29,216 @@
         }
         .header h1 {
             margin: 0;
-            font-size: 1.8em;
+            font-size: 2.2em;
+            font-weight: 300;
         }
+
         .container {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            max-width: 90%;
+            width: 1200px;
+            padding: 40px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            margin: 20px auto;
         }
-        .content {
-            max-width: 800px;
-            padding: 30px;
-            background-color: #ffffff;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.05);
+        .container h2 {
             text-align: center;
+            color: #2c3e50;
+            margin-top: 0;
+            margin-bottom: 30px;
+            font-size: 1.8em;
+            font-weight: 400;
         }
-        .content h2 {
-            color: #001f3f;
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        select, input[type="number"], button, .filter-container input[type="text"] {
+            width: 100%;
+            padding: 12px;
             margin-bottom: 20px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
         }
-        .status-message {
-            padding: 15px;
-            margin: 20px 0;
+        input[type="number"] {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+        button#search-pagamentos-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.3s ease;
+            width: auto;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 15px 40px;
+            border-radius: 50px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        button#search-pagamentos-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status-message, .error-message {
+            margin-top: 15px;
+            padding: 12px;
             border-radius: 5px;
             text-align: center;
         }
-        .info-message {
+        .status-message {
             background-color: #e7f3fe;
             border: 1px solid #d0eaff;
             color: #0c5460;
         }
+        .error-message {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .hidden {
+            display: none;
+        }
+
+        /* Estilos para o indicador de loading */
+        .loading-container {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Estilos para a seção de resultados da tabela */
+        .results-container {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            border-radius: 8px;
+        }
+        .results-container h3 {
+            color: #003E52;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        .filter-container {
+            margin-bottom: 15px;
+        }
+        .filter-container label {
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        .filter-container input[type="text"] {
+            padding: 8px 10px;
+            font-size: 0.95em;
+            margin-bottom: 0;
+        }
+        .results-actions {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        .results-actions button {
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+            width: auto;
+            padding: 10px 15px;
+        }
+        #copy-data-button {
+            background-color: #6c757d;
+        }
+        #copy-data-button:hover {
+            background-color: #545b62;
+        }
+        #download-csv-button-table {
+            background-color: #5bc0de;
+        }
+        #download-csv-button-table:hover {
+            background-color: #31b0d5;
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        #pagamentos-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        #pagamentos-table th, #pagamentos-table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            white-space: nowrap;
+        }
+        #pagamentos-table th {
+            background-color: #e9ecef;
+            color: #495057;
+            font-weight: bold;
+        }
+        #pagamentos-table tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        #pagamentos-table tbody tr:hover {
+            background-color: #e2e6ea;
+        }
+
+        /* Estilos para o toast de feedback de cópia */
+        #copy-feedback-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s, transform 0.5s;
+            transform: translateY(20px);
+        }
+        #copy-feedback-toast.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        #copy-feedback-toast.error {
+            background-color: #dc3545;
+        }
+
         .footer {
             background-color: #343a40;
             color: #f8f9fa;
@@ -63,7 +246,9 @@
             padding: 15px 30px;
             font-size: 0.9em;
             box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
+            margin-top: auto;
         }
+
         .back-button {
             position: fixed;
             top: 20px;
@@ -94,29 +279,332 @@
             content: "←";
             font-size: 16px;
         }
-
     </style>
 </head>
 <body>
     <a href="/" class="back-button">Voltar</a>
 
     <header class="header">
-        <h1>🏛️ Consulta de Pagamentos - TJCE</h1>
+        <h1>Pagamentos - TJCE</h1>
     </header>
 
     <div class="container">
-        <div class="content">
-            <h2>💰 Consulta de Pagamentos Realizados</h2>
-            <div class="status-message info-message">
-                <strong>Em desenvolvimento</strong><br>
-                Esta funcionalidade estará disponível em breve.<br>
-                Aguardando integração com a API específica de pagamentos realizados.
+        <h2>💰 Consulta de Pagamentos Realizados</h2>
+
+        <!-- Loading indicator -->
+        <div id="loading-container" class="loading-container">
+            <div class="loading-spinner"></div>
+            <p>Carregando pagamentos...</p>
+        </div>
+
+        <div id="status-message" class="status-message hidden">
+        </div>
+        <div id="error-message" class="error-message hidden">
+        </div>
+
+        <!-- Nova seção para resultados em tabela -->
+        <div id="results-container" class="results-container hidden">
+            <h3 id="results-title">Pagamentos Encontrados</h3>
+
+            <div class="filter-container">
+                <label for="filter-credor-input">Filtrar por Credor/Beneficiário:</label>
+                <input type="text" id="filter-credor-input" placeholder="Digite">
+            </div>
+
+            <div class="results-actions">
+                <button id="copy-data-button">Copiar Dados</button>
+                <button id="download-csv-button-table">Exportar CSV</button>
+            </div>
+            <div class="table-responsive">
+                <table id="pagamentos-table">
+                    <thead>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 
     <footer class="footer">
-        <p>&copy; 2025 Sistema TJCE - Em desenvolvimento</p>
+        <p>&copy; 2025 Sistema TJCE</p>
     </footer>
+
+    <!-- Toast de Feedback de Cópia -->
+    <div id="copy-feedback-toast"></div>
+
+    <script>
+        const statusMessageDiv = document.getElementById('status-message');
+        const errorMessageDiv = document.getElementById('error-message');
+        const loadingContainer = document.getElementById('loading-container');
+
+        const resultsContainer = document.getElementById('results-container');
+        const resultsTitle = document.getElementById('results-title');
+        const pagamentosTable = document.getElementById('pagamentos-table');
+        const copyDataButton = document.getElementById('copy-data-button');
+        const downloadCsvButtonTable = document.getElementById('download-csv-button-table');
+        const filterCredorInput = document.getElementById('filter-credor-input');
+        const copyFeedbackToast = document.getElementById('copy-feedback-toast');
+
+        let currentPinataUrl = null;
+        let currentTableData = [];
+
+        function showStatus(message, isError = false, isSuccessForTable = false) {
+            // Hide loading first
+            loadingContainer.classList.add('hidden');
+
+            const divToShow = isError ? errorMessageDiv : statusMessageDiv;
+            const divToHide = isError ? statusMessageDiv : errorMessageDiv;
+
+            divToShow.textContent = message;
+            divToShow.classList.remove('hidden');
+            divToHide.classList.add('hidden');
+
+            if (isSuccessForTable) {
+                statusMessageDiv.classList.add('hidden');
+            }
+        }
+
+        function hideMessages() {
+            statusMessageDiv.classList.add('hidden');
+            errorMessageDiv.classList.add('hidden');
+        }
+
+        function showLoading() {
+            loadingContainer.classList.remove('hidden');
+            resultsContainer.classList.add('hidden');
+            hideMessages();
+        }
+
+        function hideLoading() {
+            loadingContainer.classList.add('hidden');
+        }
+
+        async function loadPagamentos() {
+            showLoading();
+
+            try {
+                const response = await fetch('/api/pagamentos');
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || `Erro HTTP: ${response.status}`);
+                }
+
+                if (result.status === 'success' && result.data && result.data.length > 0) {
+                    displayPagamentosTable(result.data, 'TJCE');
+                    showStatus(`Exibindo ${result.data.length} pagamento(s).`, false, true);
+
+                    if(result.pinata_url) {
+                        currentPinataUrl = result.pinata_url;
+                        downloadCsvButtonTable.classList.remove('hidden');
+                    } else {
+                        downloadCsvButtonTable.classList.add('hidden');
+                    }
+                } else {
+                    displayPagamentosTable([], 'TJCE');
+                    showStatus('Nenhum pagamento encontrado.');
+                    downloadCsvButtonTable.classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('Erro na requisição para /api/pagamentos:', error);
+                showStatus(`Ocorreu um erro: ${error.message}. Verifique o console.`, true);
+                resultsContainer.classList.add('hidden');
+            }
+        }
+
+        function displayPagamentosTable(data, entityName) {
+            const tableHead = pagamentosTable.querySelector('thead');
+            const tableBody = pagamentosTable.querySelector('tbody');
+
+            tableHead.innerHTML = '';
+            tableBody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                resultsTitle.textContent = `Nenhum pagamento encontrado para ${entityName}`;
+                resultsContainer.classList.remove('hidden');
+                downloadCsvButtonTable.classList.add('hidden');
+                copyDataButton.disabled = true;
+                filterCredorInput.value = '';
+                filterCredorInput.disabled = true;
+                currentTableData = [];
+                return;
+            }
+
+            currentTableData = data;
+            resultsTitle.textContent = `Pagamentos: ${entityName} (${data.length})`;
+
+            // Cabeçalhos da tabela
+            const headers = ['QTDE', 'MODALIDADE', 'NATUREZA', 'EXERCÍCIO', 'DATA PROTOCOLO', 'PRECATÓRIO', 'CREDOR/BENEFICIÁRIO', 'TIPO', 'DATA PAGAMENTO', 'CPF/CNPJ', 'VALOR BRUTO', 'PREVIDÊNCIA', 'IRRF', 'HONORÁRIOS', 'V. BRUTO CONTRATUAL', 'RRA', 'VALOR LÍQUIDO'];
+            const headerRow = document.createElement('tr');
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText;
+                headerRow.appendChild(th);
+            });
+            tableHead.appendChild(headerRow);
+
+            // Mapeamento dos nomes de campo
+            const fieldMapping = {
+                'QTDE': 'quantidade',
+                'MODALIDADE': 'modalidade',
+                'NATUREZA': 'natureza',
+                'EXERCÍCIO': 'exercicio',
+                'DATA PROTOCOLO': 'data_protocolo',
+                'PRECATÓRIO': 'precatorio',
+                'CREDOR/BENEFICIÁRIO': 'credor_beneficiario',
+                'TIPO': 'tipo',
+                'DATA PAGAMENTO': 'data_pagamento',
+                'CPF/CNPJ': 'cpf_cnpj',
+                'VALOR BRUTO': 'valor_bruto',
+                'PREVIDÊNCIA': 'previdencia',
+                'IRRF': 'irrf',
+                'HONORÁRIOS': 'honorarios',
+                'V. BRUTO CONTRATUAL': 'valor_bruto_contratual',
+                'RRA': 'rra',
+                'VALOR LÍQUIDO': 'valor_liquido'
+            };
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const cell = document.createElement('td');
+                    const fieldKey = fieldMapping[header];
+                    let cellValue = item[fieldKey] !== undefined && item[fieldKey] !== null ? item[fieldKey] : '-';
+
+                    // Formatar valor se for campo monetário
+                    if (['valor_bruto', 'previdencia', 'irrf', 'honorarios', 'valor_bruto_contratual', 'rra', 'valor_liquido'].includes(fieldKey) && cellValue !== '-') {
+                        cellValue = new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL'
+                        }).format(cellValue);
+                    }
+
+                    cell.textContent = cellValue;
+                    row.appendChild(cell);
+                });
+                tableBody.appendChild(row);
+            });
+
+            copyDataButton.disabled = false;
+            resultsContainer.classList.remove('hidden');
+            filterCredorInput.disabled = false;
+            filterCredorInput.value = '';
+        }
+
+        downloadCsvButtonTable.addEventListener('click', () => {
+            if (currentPinataUrl) {
+                window.location.href = currentPinataUrl;
+            } else {
+                showStatus('Nenhuma URL de download disponível.', true);
+            }
+        });
+
+        copyDataButton.addEventListener('click', () => {
+            if (currentTableData && currentTableData.length > 0) {
+                const headersForCopy = [
+                    'Qtde', 'Modalidade', 'Natureza', 'Exercício', 'Data Protocolo',
+                    'Precatório', 'Credor/Beneficiário', 'Tipo', 'Data Pagamento',
+                    'CPF/CNPJ', 'Valor Bruto', 'Previdência', 'IRRF', 'Honorários',
+                    'V. Bruto Contratual', 'RRA', 'Valor Líquido'
+                ];
+                const fieldMappingForCopy = {
+                    'Qtde': 'quantidade',
+                    'Modalidade': 'modalidade',
+                    'Natureza': 'natureza',
+                    'Exercício': 'exercicio',
+                    'Data Protocolo': 'data_protocolo',
+                    'Precatório': 'precatorio',
+                    'Credor/Beneficiário': 'credor_beneficiario',
+                    'Tipo': 'tipo',
+                    'Data Pagamento': 'data_pagamento',
+                    'CPF/CNPJ': 'cpf_cnpj',
+                    'Valor Bruto': 'valor_bruto',
+                    'Previdência': 'previdencia',
+                    'IRRF': 'irrf',
+                    'Honorários': 'honorarios',
+                    'V. Bruto Contratual': 'valor_bruto_contratual',
+                    'RRA': 'rra',
+                    'Valor Líquido': 'valor_liquido'
+                };
+
+                function formatCurrencyForCopy(value) {
+                    if (value === null || value === undefined || String(value).trim() === '-' || String(value).trim() === '') {
+                        return '-';
+                    }
+                    try {
+                        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+                    } catch (e) {
+                        return String(value);
+                    }
+                }
+
+                const TAB = String.fromCharCode(9);
+                const NEWLINE = String.fromCharCode(10);
+
+                let tsvData = headersForCopy.join(TAB) + NEWLINE;
+                currentTableData.forEach(item => {
+                    const rowValues = headersForCopy.map(header => {
+                        const fieldKey = fieldMappingForCopy[header];
+                        let cellValue = item[fieldKey] !== undefined && item[fieldKey] !== null ? item[fieldKey] : '-';
+
+                        if (['valor_bruto', 'previdencia', 'irrf', 'honorarios', 'valor_bruto_contratual', 'rra', 'valor_liquido'].includes(fieldKey)) {
+                            cellValue = formatCurrencyForCopy(cellValue);
+                        }
+                        return String(cellValue).replace(/\r?\n|\r/g, ' ');
+                    });
+                    tsvData += rowValues.join(TAB) + NEWLINE;
+                });
+
+                navigator.clipboard.writeText(tsvData).then(() => {
+                    showCopyFeedback('Dados copiados com sucesso!');
+                }).catch(err => {
+                    console.error('Erro ao copiar dados da tabela: ', err);
+                    showCopyFeedback('Falha ao copiar dados.', true);
+                });
+            } else {
+                showCopyFeedback('Não há dados para copiar.', true);
+            }
+        });
+
+        function showCopyFeedback(message, isError = false) {
+            copyFeedbackToast.textContent = message;
+            copyFeedbackToast.className = 'show';
+            if (isError) {
+                copyFeedbackToast.classList.add('error');
+            } else {
+                copyFeedbackToast.classList.remove('error');
+            }
+
+            setTimeout(() => {
+                copyFeedbackToast.className = '';
+            }, 2000);
+        }
+
+        // Event listener para o filtro de credor
+        filterCredorInput.addEventListener('input', () => {
+            const filterValue = filterCredorInput.value.toLowerCase().trim();
+            const tableBody = pagamentosTable.querySelector('tbody');
+            if (!tableBody) return;
+
+            const rows = tableBody.querySelectorAll('tr');
+            rows.forEach(row => {
+                const credorCell = row.cells[6]; // Coluna CREDOR/BENEFICIÁRIO (índice 6)
+                if (credorCell) {
+                    const cellText = credorCell.textContent || credorCell.innerText;
+                    if (cellText.toLowerCase().includes(filterValue)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                }
+            });
+        });
+
+        // Carregar pagamentos automaticamente quando a página carrega
+        window.onload = function() {
+            loadPagamentos();
+        };
+    </script>
 </body>
 </html>

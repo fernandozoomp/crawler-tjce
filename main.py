@@ -20,6 +20,7 @@ import requests
 from crawler import PrecatoriosCrawler
 from entity_mapping_crawler import EntityMappingCrawler
 from edital_crawler import EditalCrawler
+from pagamentos_crawler import PagamentosCrawler
 from config import config, field_config
 from logger import configure_logging, get_logger
 from models import (
@@ -28,6 +29,7 @@ from models import (
     EntityMapping,
     EntidadeResponse,
     Edital,
+    Pagamento,
     HealthCheckResponse,
     FetchPrecatoriosQuery,
 )
@@ -222,6 +224,278 @@ class Editais(Resource):
                 "data": []
             }, 500
 
+
+# Rota para buscar pagamentos via API
+@ns.route("/pagamentos")
+class Pagamentos(Resource):
+    @cache.cached(timeout=config.cache_timeout_entities)
+    @limiter.limit(config.rate_limit_entities)
+    def get(self):
+        """Lista todos os pagamentos realizados e fornece um CSV com os dados via Pinata."""
+        logger.info("Endpoint /pagamentos chamado")
+        output_filename = "pagamentos_tjce.csv"
+        output_dir = os.path.join(os.getcwd(), "data")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, output_filename)
+
+        try:
+            logger.info(f"Buscando pagamentos e salvando em {output_path}")
+            pagamentos_data = pagamentos_crawler.get_and_save_pagamentos(output_path)
+
+            if not pagamentos_data:
+                logger.warning("Nenhum pagamento encontrado.")
+                return {
+                    "status": "warning",
+                    "message": "Nenhum pagamento encontrado.",
+                    "data": [],
+                }, 200
+
+            pinata_url = None
+            logger.info(
+                f"Verificando condições para upload no Pinata (Pagamentos): JWT_EXISTS={bool(config.pinata_api_jwt)}, FILE_EXISTS={os.path.exists(output_path)}"
+            )
+            if config.pinata_api_jwt and os.path.exists(output_path):
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                pinata_file_name = f"pagamentos_tjce_{timestamp}.csv"
+                logger.info(
+                    f"Tentando upload de {output_path} para Pinata como {pinata_file_name}"
+                )
+                pinata_url = upload_and_get_pinata_url(
+                    local_file_path=output_path,
+                    file_name_for_pinata=pinata_file_name,
+                    pinata_jwt=config.pinata_api_jwt,
+                    pinata_metadata={"type": "pagamentos"},
+                )
+                if pinata_url:
+                    logger.info(f"Upload para Pinata bem-sucedido: {pinata_url}")
+                else:
+                    logger.warning(
+                        "Falha no upload do arquivo de pagamentos para o Pinata."
+                    )
+
+            # Converter dados para formato serializável
+            serialized_data = []
+            for pagamento in pagamentos_data:
+                # Trata os valores que podem vir como Decimal ou string
+                def safe_float(value):
+                    if isinstance(value, str):
+                        if value == "-" or not value.strip():
+                            return 0.0
+                        try:
+                            return float(value)
+                        except (ValueError, TypeError):
+                            return 0.0
+                    elif hasattr(value, '__float__'):
+                        return float(value)
+                    return 0.0
+
+                serialized_pagamento = {
+                    "quantidade": pagamento.get("quantidade", 0),
+                    "modalidade": pagamento.get("modalidade", "-"),
+                    "natureza": pagamento.get("natureza", "-"),
+                    "exercicio": pagamento.get("exercicio", 0),
+                    "data_protocolo": pagamento.get("data_protocolo", ""),
+                    "precatorio": pagamento.get("precatorio", "-"),
+                    "credor_beneficiario": pagamento.get("credor_beneficiario", "-"),
+                    "tipo": pagamento.get("tipo", "-"),
+                    "data_pagamento": pagamento.get("data_pagamento", ""),
+                    "cpf_cnpj": pagamento.get("cpf_cnpj", "-"),
+                    "valor_bruto": safe_float(pagamento.get("valor_bruto", 0.0)),
+                    "previdencia": safe_float(pagamento.get("previdencia", 0.0)),
+                    "irrf": safe_float(pagamento.get("irrf", 0.0)),
+                    "honorarios": safe_float(pagamento.get("honorarios", 0.0)),
+                    "valor_bruto_contratual": safe_float(pagamento.get("valor_bruto_contratual", 0.0)),
+                    "rra": safe_float(pagamento.get("rra", 0.0)),
+                    "valor_liquido": safe_float(pagamento.get("valor_liquido", 0.0)),
+                }
+                serialized_data.append(serialized_pagamento)
+
+            return {
+                "status": "success",
+                "message": "Pagamentos listados com sucesso.",
+                "data": serialized_data,
+                "pinata_url": pinata_url,
+                "num_pagamentos_found": len(pagamentos_data),
+            }, 200
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar pagamentos: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Erro interno: {str(e)}",
+                "data": []
+            }, 500
+
+pagamento_item_fields = api.model(
+    "PagamentoItem",
+    {
+        "quantidade": fields.Integer(
+            required=True, description="Quantidade de registros."
+        ),
+        "modalidade": fields.String(required=True, description="Modalidade do pagamento."),
+        "natureza": fields.String(
+            description="Natureza do pagamento.", default="-"
+        ),
+        "exercicio": fields.Integer(required=True, description="Ano do exercício."),
+        "data_protocolo": fields.String(
+            description="Data de protocolo do pagamento.", default=""
+        ),
+        "precatorio": fields.String(required=True, description="Número do precatório."),
+        "credor_beneficiario": fields.String(
+            description="Nome do credor/beneficiário.", default="-"
+        ),
+        "tipo": fields.String(description="Tipo de pagamento.", default="-"),
+        "data_pagamento": fields.String(
+            description="Data do pagamento.", default=""
+        ),
+        "cpf_cnpj": fields.String(description="CPF ou CNPJ.", default="-"),
+        "valor_bruto": fields.Float(
+            description="Valor bruto do pagamento."
+        ),
+        "previdencia": fields.Float(
+            description="Valor da previdência."
+        ),
+        "irrf": fields.Float(description="Valor do IRRF."),
+        "honorarios": fields.Float(
+            description="Valor dos honorários."
+        ),
+        "valor_bruto_contratual": fields.Float(
+            description="Valor bruto contratual."
+        ),
+        "rra": fields.Float(description="Valor do RRA."),
+        "valor_liquido": fields.Float(
+            description="Valor líquido do pagamento."
+        ),
+    },
+)
+
+pagamento_response_model_fields = api.model(
+    "PagamentoResponse",
+    {
+        "status": fields.String(required=True, description="Status da resposta."),
+        "message": fields.String(
+            required=True, description="Mensagem descritiva da resposta."
+        ),
+        "data": fields.List(
+            fields.Nested(pagamento_item_fields),
+            description="Lista de pagamentos encontrados.",
+            allow_null=True,
+        ),
+        "pinata_url": fields.String(
+            description="URL do arquivo CSV de pagamentos no Pinata, se o upload for bem-sucedido.",
+            allow_null=True,
+        ),
+        "num_pagamentos_found": fields.Integer(
+            description="Número total de pagamentos encontrados.",
+            required=False,
+            allow_null=True,
+        ),
+    },
+)
+
+
+@ns.route("/pagamentos")
+class Pagamentos(Resource):
+    @cache.cached(timeout=config.cache_timeout_entities)
+    @limiter.limit(config.rate_limit_entities)
+    @ns.marshal_with(pagamento_response_model_fields)
+    def get(self):
+        """Lista todos os pagamentos realizados e fornece um CSV com os dados via Pinata."""
+        logger.info("Endpoint /pagamentos chamado")
+        output_filename = "pagamentos_tjce.csv"
+        output_dir = os.path.join(os.getcwd(), "data")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, output_filename)
+
+        try:
+            logger.info(f"Buscando pagamentos e salvando em {output_path}")
+            pagamentos_data = pagamentos_crawler.get_and_save_pagamentos(output_path)
+
+            if not pagamentos_data:
+                logger.warning("Nenhum pagamento encontrado.")
+                return {
+                    "status": "warning",
+                    "message": "Nenhum pagamento encontrado.",
+                    "data": [],
+                }, 200
+
+            pinata_url = None
+            logger.info(
+                f"Verificando condições para upload no Pinata (Pagamentos): JWT_EXISTS={bool(config.pinata_api_jwt)}, FILE_EXISTS={os.path.exists(output_path)}"
+            )
+            if config.pinata_api_jwt and os.path.exists(output_path):
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                pinata_file_name = f"pagamentos_tjce_{timestamp}.csv"
+                logger.info(
+                    f"Tentando upload de {output_path} para Pinata como {pinata_file_name}"
+                )
+                pinata_url = upload_and_get_pinata_url(
+                    local_file_path=output_path,
+                    file_name_for_pinata=pinata_file_name,
+                    pinata_jwt=config.pinata_api_jwt,
+                    pinata_metadata={"type": "pagamentos"},
+                )
+                if pinata_url:
+                    logger.info(f"Upload para Pinata bem-sucedido: {pinata_url}")
+                else:
+                    logger.warning(
+                        "Falha no upload do arquivo de pagamentos para o Pinata."
+                    )
+
+            # Converter dados para formato serializável
+            serialized_data = []
+            for pagamento in pagamentos_data:
+                # Trata os valores que podem vir como Decimal ou string
+                def safe_float(value):
+                    if isinstance(value, str):
+                        if value == "-" or not value.strip():
+                            return 0.0
+                        try:
+                            return float(value)
+                        except (ValueError, TypeError):
+                            return 0.0
+                    elif hasattr(value, '__float__'):
+                        return float(value)
+                    return 0.0
+
+                serialized_pagamento = {
+                    "quantidade": pagamento.get("quantidade", 0),
+                    "modalidade": pagamento.get("modalidade", "-"),
+                    "natureza": pagamento.get("natureza", "-"),
+                    "exercicio": pagamento.get("exercicio", 0),
+                    "data_protocolo": pagamento.get("data_protocolo", ""),
+                    "precatorio": pagamento.get("precatorio", "-"),
+                    "credor_beneficiario": pagamento.get("credor_beneficiario", "-"),
+                    "tipo": pagamento.get("tipo", "-"),
+                    "data_pagamento": pagamento.get("data_pagamento", ""),
+                    "cpf_cnpj": pagamento.get("cpf_cnpj", "-"),
+                    "valor_bruto": safe_float(pagamento.get("valor_bruto", 0.0)),
+                    "previdencia": safe_float(pagamento.get("previdencia", 0.0)),
+                    "irrf": safe_float(pagamento.get("irrf", 0.0)),
+                    "honorarios": safe_float(pagamento.get("honorarios", 0.0)),
+                    "valor_bruto_contratual": safe_float(pagamento.get("valor_bruto_contratual", 0.0)),
+                    "rra": safe_float(pagamento.get("rra", 0.0)),
+                    "valor_liquido": safe_float(pagamento.get("valor_liquido", 0.0)),
+                }
+                serialized_data.append(serialized_pagamento)
+
+            return {
+                "status": "success",
+                "message": "Pagamentos listados com sucesso.",
+                "data": serialized_data,
+                "pinata_url": pinata_url,
+                "num_pagamentos_found": len(pagamentos_data),
+            }, 200
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar pagamentos: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Erro interno: {str(e)}",
+                "data": []
+            }, 500
+
+
 # Modelo para os argumentos de query da rota /fetch, para documentação e validação
 fetch_precatorios_parser = ns.parser()
 fetch_precatorios_parser.add_argument(
@@ -369,9 +643,54 @@ precatorio_response_model_fields = api.model(
     },
 )
 
+pagamento_item_fields = api.model(
+    "PagamentoItem",
+    {
+        "quantidade": fields.Integer(
+            required=True, description="Quantidade de registros."
+        ),
+        "modalidade": fields.String(required=True, description="Modalidade do pagamento."),
+        "natureza": fields.String(
+            description="Natureza do pagamento.", default="-"
+        ),
+        "exercicio": fields.Integer(required=True, description="Ano do exercício."),
+        "data_protocolo": fields.String(
+            description="Data de protocolo do pagamento.", default=""
+        ),
+        "precatorio": fields.String(required=True, description="Número do precatório."),
+        "credor_beneficiario": fields.String(
+            description="Nome do credor/beneficiário.", default="-"
+        ),
+        "tipo": fields.String(description="Tipo de pagamento.", default="-"),
+        "data_pagamento": fields.String(
+            description="Data do pagamento.", default=""
+        ),
+        "cpf_cnpj": fields.String(description="CPF ou CNPJ.", default="-"),
+        "valor_bruto": fields.Float(
+            description="Valor bruto do pagamento."
+        ),
+        "previdencia": fields.Float(
+            description="Valor da previdência."
+        ),
+        "irrf": fields.Float(description="Valor do IRRF."),
+        "honorarios": fields.Float(
+            description="Valor dos honorários."
+        ),
+        "valor_bruto_contratual": fields.Float(
+            description="Valor bruto contratual."
+        ),
+        "rra": fields.Float(description="Valor do RRA."),
+        "valor_liquido": fields.Float(
+            description="Valor líquido do pagamento."
+        ),
+    },
+)
+
+
 # Instâncias dos crawlers
 crawler = PrecatoriosCrawler()
 edital_crawler = EditalCrawler()
+pagamentos_crawler = PagamentosCrawler()
 
 
 def apply_filters(rows: List[Dict[str, Any]], **filters) -> List[Dict[str, Any]]:

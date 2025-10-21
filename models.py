@@ -289,6 +289,76 @@ class Edital(BaseModel):
         use_enum_values = True
 
 
+class Pagamento(BaseModel):
+    quantidade: int = Field(default=0)
+    modalidade: str = Field(default="-")
+    natureza: str = Field(default="-")
+    exercicio: int = Field(default=0)
+    data_protocolo: str = Field(default="")
+    precatorio: str = Field(default="-")
+    credor_beneficiario: str = Field(default="-")
+    tipo: str = Field(default="-")
+    data_pagamento: str = Field(default="")
+    cpf_cnpj: str = Field(default="-")
+    valor_bruto: Decimal = Field(default=Decimal("0.0"))
+    previdencia: Decimal = Field(default=Decimal("0.0"))
+    irrf: Decimal = Field(default=Decimal("0.0"))
+    honorarios: Decimal = Field(default=Decimal("0.0"))
+    valor_bruto_contratual: Decimal = Field(default=Decimal("0.0"))
+    rra: Decimal = Field(default=Decimal("0.0"))
+    valor_liquido: Decimal = Field(default=Decimal("0.0"))
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat() if dt else None,
+            date: lambda d: d.isoformat() if d else None,
+            Decimal: lambda dec: float(dec) if dec is not None else None,
+        }
+        populate_by_name = True
+        use_enum_values = True
+
+    @validator("modalidade", "natureza", "tipo", pre=True, always=True)
+    @classmethod
+    def clean_optional_strings(cls, v: Any) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "-"
+        if not isinstance(v, str):
+            return str(v).strip()
+        return v.strip()
+
+    @validator("cpf_cnpj", pre=True, always=True)
+    @classmethod
+    def clean_cpf_cnpj(cls, v: Any) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "-"
+        if not isinstance(v, str):
+            return str(v).strip()
+        # Remove caracteres não numéricos
+        cleaned = "".join(c for c in v if c.isdigit())
+        return cleaned if cleaned else "-"
+
+    @validator("valor_bruto", "previdencia", "irrf", "honorarios", "valor_bruto_contratual", "rra", "valor_liquido", pre=True, always=True)
+    @classmethod
+    def clean_decimal_fields(cls, v: Any) -> Decimal:
+        if isinstance(v, Decimal):
+            return v
+
+        if v is None or (isinstance(v, str) and (v.strip() == "-" or not v.strip())):
+            return Decimal("0.0")
+
+        if isinstance(v, str):
+            cleaned_v = v.replace("R$", "").strip()
+            try:
+                return Decimal(cleaned_v)
+            except InvalidOperation:
+                return Decimal("0.0")
+
+        if isinstance(v, (int, float)):
+            return Decimal(str(v))
+
+        return Decimal("0.0")
+
+
 class FetchPrecatoriosQuery(BaseModel):
     entity: str = Field(
         ...,
