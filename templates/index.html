@@ -5,17 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Consulta de Precatórios TJCE</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: sans-serif;
-            background-color: #f0f2f5; /* Um cinza claro para o fundo geral */
-            margin: 0; /* Remover margem padrão do body */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
             color: #333;
             display: flex;
             flex-direction: column;
-            min-height: 100vh; /* Garante que o footer fique no fim da página mesmo com pouco conteúdo */
+            min-height: 100vh;
         }
         .header {
-            background-color: #001f3f; /* Azul Marinho Clássico */
+            background-color: #001f3f;
             color: white;
             padding: 15px 30px;
             text-align: center;
@@ -23,7 +29,8 @@
         }
         .header h1 {
             margin: 0;
-            font-size: 1.8em;
+            font-size: 2.2em;
+            font-weight: 300;
         }
 
         .container-wrapper {
@@ -34,25 +41,27 @@
         }
 
         .container {
-            max-width: 90%; /* Aumentar para acomodar a tabela */
-            width: 1000px; /* Largura base para a tabela */
-            padding: 30px;
-            background-color: #ffffff; /* Fundo branco para o conteúdo */
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.05);
+            max-width: 90%;
+            width: 1200px;
+            padding: 40px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            margin: 20px auto;
         }
         .container h2 {
             text-align: center;
-            color: #001f3f; /* Azul Marinho Clássico */
+            color: #2c3e50;
             margin-top: 0;
-            margin-bottom: 25px;
+            margin-bottom: 30px;
+            font-size: 1.8em;
+            font-weight: 400;
         }
         label {
             display: block;
             margin-bottom: 8px;
-            font-weight: bold;
-            color: #555;
+            font-weight: 600;
+            color: #2c3e50;
         }
         select, input[type="number"], button, .filter-container input[type=\"text\"] {
             width: 100%;
@@ -66,23 +75,26 @@
             appearance: textfield; /* Para navegadores baseados em WebKit/Blink para remover setas */
             -moz-appearance: textfield; /* Para Firefox */
         }
-        button#search-precatorios-button { 
-            background-color: #0056b3; /* Azul mais escuro e discreto */
+        button#search-precatorios-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             font-size: 16px;
             cursor: pointer;
             border: none;
-            transition: background-color 0.3s ease;
-            width: auto; /* Ajusta a largura ao conteúdo */
-            display: block; /* Necessário para margin auto funcionar */
-            margin-left: auto; /* Centraliza o botão */
-            margin-right: auto; /* Centraliza o botão */
-            padding-left: 100px; /* Espaçamento interno horizontal */
-            padding-right: 100px; /* Espaçamento interno horizontal */
-            /* O padding vertical (12px) e margin-bottom (20px) vêm da regra geral de button */
+            transition: all 0.3s ease;
+            width: auto;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 15px 40px;
+            border-radius: 50px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         button#search-precatorios-button:hover {
-            background-color: #004085; /* Tom ainda mais escuro para hover */
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
         button:disabled {
             background-color: #ccc;
@@ -94,15 +106,21 @@
             border-radius: 5px;
             text-align: center;
         }
-        .status-message { /* Para mensagens de sucesso ou informativas */
+        .status-message {
             background-color: #e7f3fe;
             border: 1px solid #d0eaff;
             color: #0c5460;
+            padding: 12px;
+            border-radius: 5px;
+            text-align: center;
         }
-        .error-message { /* Para mensagens de erro */
+        .error-message {
             background-color: #f8d7da;
             border: 1px solid #f5c6cb;
             color: #721c24;
+            padding: 12px;
+            border-radius: 5px;
+            text-align: center;
         }
         .hidden {
             display: none;
@@ -214,16 +232,50 @@
         }
 
         .footer {
-            background-color: #343a40; /* Cinza escuro para o footer */
-            color: #f8f9fa; /* Texto claro para o footer */
+            background-color: #343a40;
+            color: #f8f9fa;
             text-align: center;
             padding: 15px 30px;
             font-size: 0.9em;
             box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
+            margin-top: auto;
+        }
+
+        .back-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #2c3e50;
+            border: 2px solid #667eea;
+            padding: 10px 15px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .back-button:hover {
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .back-button::before {
+            content: "←";
+            font-size: 16px;
         }
     </style>
 </head>
 <body>
+    <a href="/" class="back-button">Voltar</a>
+
     <header class="header">
         <h1>Consulta Precatórios - TJCE</h1>
     </header>
@@ -319,23 +371,34 @@
         }
         
         function populateEntities() {
-            const entitiesFromServer = {{ entities_list | tojson | safe }};
+            // Initialize entities list - populated by server-side template
+            {% if entities_list %}
+            const entitiesFromServer = [
+                {% for entity in entities_list %}
+                {"slug": "{{ entity.slug }}", "official_name": "{{ entity.official_name }}"}
+                {% if not loop.last %},{% endif %}
+                {% endfor %}
+            ];
+            {% else %}
+            const entitiesFromServer = [];
+            {% endif %}
+
             entityDropdown.disabled = true;
             searchButton.disabled = true;
 
             if (entitiesFromServer && entitiesFromServer.length > 0) {
-                entityDropdown.innerHTML = '<option value="">Selecione uma entidade</option>';
+                entityDropdown.innerHTML = '<option value="">Selecione</option>';
                 entitiesFromServer.forEach(entity => {
                     const option = document.createElement('option');
                     option.value = entity.slug;
                     option.textContent = entity.official_name;
                     entityDropdown.appendChild(option);
                 });
-                hideMessages(); 
+                hideMessages();
             } else {
                 entityDropdown.innerHTML = '<option value="">Nenhuma entidade disponível</option>';
                 showStatus('Nenhuma entidade encontrada para carregar no dropdown.', true);
-                searchButton.disabled = true; 
+                searchButton.disabled = true;
             }
             entityDropdown.disabled = false;
             if (entitiesFromServer && entitiesFromServer.length > 0) {

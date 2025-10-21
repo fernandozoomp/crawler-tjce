@@ -143,7 +143,7 @@ class EntityMappingCrawler:
                             entity_str = str(entity_value).strip()
                             if (
                                 entity_str
-                                and entity_str.lower() != "--- selecione a entidade"
+                                and entity_str.lower() != "--- selecione"
                             ):  # Ignora o placeholder
                                 decoded_entity = self._decode_utf8(
                                     entity_str.strip("'")

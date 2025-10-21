@@ -3,11 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consulta de Editais TJCE</title>
+    <title>TJCE</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: sans-serif;
-            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             margin: 0;
             color: #333;
             display: flex;
@@ -23,39 +29,195 @@
         }
         .header h1 {
             margin: 0;
-            font-size: 1.8em;
+            font-size: 2.2em;
+            font-weight: 300;
         }
+
         .container {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            max-width: 90%;
+            width: 1200px;
+            padding: 40px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            margin: 20px auto;
         }
-        .content {
-            max-width: 800px;
-            padding: 30px;
-            background-color: #ffffff;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0,0,0,0.05);
+        .container h2 {
             text-align: center;
+            color: #2c3e50;
+            margin-top: 0;
+            margin-bottom: 30px;
+            font-size: 1.8em;
+            font-weight: 400;
         }
-        .content h2 {
-            color: #001f3f;
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        select, input[type="number"], button, .filter-container input[type="text"] {
+            width: 100%;
+            padding: 12px;
             margin-bottom: 20px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
         }
-        .status-message {
-            padding: 15px;
-            margin: 20px 0;
+        input[type="number"] {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+        button#search-editais-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.3s ease;
+            width: auto;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 15px 40px;
+            border-radius: 50px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        button#search-editais-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status-message, .error-message {
+            margin-top: 15px;
+            padding: 12px;
             border-radius: 5px;
             text-align: center;
         }
-        .info-message {
+        .status-message {
             background-color: #e7f3fe;
             border: 1px solid #d0eaff;
             color: #0c5460;
         }
+        .error-message {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .hidden {
+            display: none;
+        }
+
+        /* Estilos para a seção de resultados da tabela */
+        .results-container {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            border-radius: 8px;
+        }
+        .results-container h3 {
+            color: #003E52;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        .filter-container {
+            margin-bottom: 15px;
+        }
+        .filter-container label {
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        .filter-container input[type="text"] {
+            padding: 8px 10px;
+            font-size: 0.95em;
+            margin-bottom: 0;
+        }
+        .results-actions {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        .results-actions button {
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+            width: auto;
+            padding: 10px 15px;
+        }
+        #copy-data-button {
+            background-color: #6c757d;
+        }
+        #copy-data-button:hover {
+            background-color: #545b62;
+        }
+        #download-csv-button-table {
+            background-color: #5bc0de;
+        }
+        #download-csv-button-table:hover {
+            background-color: #31b0d5;
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        #editais-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        #editais-table th, #editais-table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            white-space: nowrap;
+        }
+        #editais-table th {
+            background-color: #e9ecef;
+            color: #495057;
+            font-weight: bold;
+        }
+        #editais-table tbody tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        #editais-table tbody tr:hover {
+            background-color: #e2e6ea;
+        }
+
+        /* Estilos para o toast de feedback de cópia */
+        #copy-feedback-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s, transform 0.5s;
+            transform: translateY(20px);
+        }
+        #copy-feedback-toast.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        #copy-feedback-toast.error {
+            background-color: #dc3545;
+        }
+
         .footer {
             background-color: #343a40;
             color: #f8f9fa;
@@ -63,7 +225,9 @@
             padding: 15px 30px;
             font-size: 0.9em;
             box-shadow: 0 -2px 4px rgba(0,0,0,0.1);
+            margin-top: auto;
         }
+
         .back-button {
             position: fixed;
             top: 20px;
@@ -94,29 +258,359 @@
             content: "←";
             font-size: 16px;
         }
-
     </style>
 </head>
 <body>
     <a href="/" class="back-button">Voltar</a>
 
     <header class="header">
-        <h1>🏛️ Consulta de Editais - TJCE</h1>
+        <h1>Consulta de Editais - TJCE</h1>
     </header>
 
     <div class="container">
-        <div class="content">
-            <h2>📄 Consulta de Editais</h2>
-            <div class="status-message info-message">
-                <strong>Em desenvolvimento</strong><br>
-                Esta funcionalidade estará disponível em breve.<br>
-                Aguardando integração com a API específica de editais.
+        <h2>📄 Consulta de Editais</h2>
+
+        <div>
+            <label for="entity-dropdown-edital">Selecione a Entidade:</label>
+            <select id="entity-dropdown-edital">
+                <option value="">Carregando entidades...</option>
+            </select>
+        </div>
+
+        <button id="search-editais-button">Buscar</button>
+
+        <div id="status-message" class="status-message hidden">
+        </div>
+        <div id="error-message" class="error-message hidden">
+        </div>
+
+        <!-- Nova seção para resultados em tabela -->
+        <div id="results-container" class="results-container hidden">
+            <h3 id="results-title">Editais Encontrados</h3>
+
+            <div class="filter-container">
+                <label for="filter-precatorio-input">Filtrar por Precatório:</label>
+                <input type="text" id="filter-precatorio-input" placeholder="Digite para filtrar...">
+            </div>
+
+            <div class="results-actions">
+                <button id="copy-data-button">Copiar Dados</button>
+                <button id="download-csv-button-table">Exportar CSV</button>
+            </div>
+            <div class="table-responsive">
+                <table id="editais-table">
+                    <thead>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 
     <footer class="footer">
-        <p>&copy; 2025 Sistema TJCE - Em desenvolvimento</p>
+        <p>&copy; 2025 Sistema TJCE</p>
     </footer>
+
+    <!-- Toast de Feedback de Cópia -->
+    <div id="copy-feedback-toast"></div>
+
+    <script>
+        const entityDropdownEdital = document.getElementById('entity-dropdown-edital');
+        const searchEditaisButton = document.getElementById('search-editais-button');
+        const statusMessageDiv = document.getElementById('status-message');
+        const errorMessageDiv = document.getElementById('error-message');
+
+        const resultsContainer = document.getElementById('results-container');
+        const resultsTitle = document.getElementById('results-title');
+        const editaisTable = document.getElementById('editais-table');
+        const copyDataButton = document.getElementById('copy-data-button');
+        const downloadCsvButtonTable = document.getElementById('download-csv-button-table');
+        const filterPrecatórioInput = document.getElementById('filter-precatorio-input');
+        const copyFeedbackToast = document.getElementById('copy-feedback-toast');
+
+        let currentPinataUrl = null;
+        let currentTableData = [];
+
+        function showStatus(message, isError = false, isSuccessForTable = false) {
+            const divToShow = isError ? errorMessageDiv : statusMessageDiv;
+            const divToHide = isError ? statusMessageDiv : errorMessageDiv;
+
+            divToShow.textContent = message;
+            divToShow.classList.remove('hidden');
+            divToHide.classList.add('hidden');
+
+            if (isSuccessForTable) {
+                statusMessageDiv.classList.add('hidden');
+            }
+        }
+
+        function hideMessages() {
+            statusMessageDiv.classList.add('hidden');
+            errorMessageDiv.classList.add('hidden');
+        }
+
+        function populateEntities() {
+            // Buscar entidades da API
+            fetch('/api/entities')
+                .then(response => response.json())
+                .then(data => {
+                    entityDropdownEdital.disabled = true;
+                    searchEditaisButton.disabled = true;
+
+                    if (data && data.data && data.data.length > 0) {
+                        entityDropdownEdital.innerHTML = '<option value="">Selecione uma entidade</option>';
+                        data.data.forEach(entity => {
+                            const option = document.createElement('option');
+                            option.value = entity.slug;
+                            option.textContent = entity.official_name;
+                            entityDropdownEdital.appendChild(option);
+                        });
+                        hideMessages();
+                    } else {
+                        entityDropdownEdital.innerHTML = '<option value="">Nenhuma entidade disponível</option>';
+                        showStatus('Nenhuma entidade encontrada para carregar no dropdown.', true);
+                        searchEditaisButton.disabled = true;
+                    }
+                    entityDropdownEdital.disabled = false;
+                    if (data && data.data && data.data.length > 0) {
+                        searchEditaisButton.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro ao carregar entidades:', error);
+                    entityDropdownEdital.innerHTML = '<option value="">Erro ao carregar entidades</option>';
+                    showStatus('Erro ao carregar entidades. Tente novamente.', true);
+                    searchEditaisButton.disabled = true;
+                });
+        }
+
+        function displayEditaisTable(data, entityName) {
+            const tableHead = editaisTable.querySelector('thead');
+            const tableBody = editaisTable.querySelector('tbody');
+
+            tableHead.innerHTML = '';
+            tableBody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                resultsTitle.textContent = `Nenhum edital encontrado para ${entityName}`;
+                resultsContainer.classList.remove('hidden');
+                downloadCsvButtonTable.classList.add('hidden');
+                copyDataButton.disabled = true;
+                filterPrecatórioInput.value = '';
+                filterPrecatórioInput.disabled = true;
+                currentTableData = [];
+                return;
+            }
+
+            currentTableData = data;
+            resultsTitle.textContent = `Editais: ${entityName} (${data.length})`;
+
+            // Cabeçalhos da tabela
+            const headers = ['ORDEM', 'ANO ORÇAMENTO', 'NATUREZA', 'DATA CADASTRO', 'PRECATÓRIO', 'STATUS', 'VALOR'];
+            const headerRow = document.createElement('tr');
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText;
+                headerRow.appendChild(th);
+            });
+            tableHead.appendChild(headerRow);
+
+            // Mapeamento dos nomes de campo
+            const fieldMapping = {
+                'ORDEM': 'ordem',
+                'ANO ORÇAMENTO': 'ano_orcamento',
+                'NATUREZA': 'natureza',
+                'DATA CADASTRO': 'data_cadastro',
+                'PRECATÓRIO': 'precatorio',
+                'STATUS': 'status',
+                'VALOR': 'valor'
+            };
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const cell = document.createElement('td');
+                    const fieldKey = fieldMapping[header];
+                    let cellValue = item[fieldKey] !== undefined && item[fieldKey] !== null ? item[fieldKey] : '-';
+
+                    // Formatar valor se for o campo valor
+                    if (fieldKey === 'valor' && cellValue !== '-') {
+                        cellValue = new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL'
+                        }).format(cellValue);
+                    }
+
+                    cell.textContent = cellValue;
+                    row.appendChild(cell);
+                });
+                tableBody.appendChild(row);
+            });
+
+            copyDataButton.disabled = false;
+            resultsContainer.classList.remove('hidden');
+            filterPrecatórioInput.disabled = false;
+            filterPrecatórioInput.value = '';
+        }
+
+        searchEditaisButton.addEventListener('click', async () => {
+            const entitySlug = entityDropdownEdital.value;
+            const selectedEntityName = entityDropdownEdital.options[entityDropdownEdital.selectedIndex].text;
+
+            if (!entitySlug) {
+                showStatus('Por favor, selecione uma entidade.', true);
+                resultsContainer.classList.add('hidden');
+                return;
+            }
+
+            showStatus('Buscando editais...');
+            searchEditaisButton.disabled = true;
+            resultsContainer.classList.add('hidden');
+            downloadCsvButtonTable.classList.add('hidden');
+            filterPrecatórioInput.value = '';
+            filterPrecatórioInput.disabled = true;
+            currentPinataUrl = null;
+            currentTableData = [];
+
+            try {
+                const response = await fetch(`/api/editais`);
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || `Erro HTTP: ${response.status}`);
+                }
+
+                if (result.status === 'success' && result.data && result.data.length > 0) {
+                    displayEditaisTable(result.data, selectedEntityName);
+                    showStatus(`Exibindo ${result.data.length} edital(is) para ${selectedEntityName}.`, false, true);
+
+                    if(result.pinata_url) {
+                        currentPinataUrl = result.pinata_url;
+                        downloadCsvButtonTable.classList.remove('hidden');
+                    } else {
+                        downloadCsvButtonTable.classList.add('hidden');
+                    }
+                } else {
+                    displayEditaisTable([], selectedEntityName);
+                    showStatus(`Nenhum edital encontrado para ${selectedEntityName}.`);
+                    downloadCsvButtonTable.classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('Erro na requisição para /api/editais:', error);
+                showStatus(`Ocorreu um erro: ${error.message}. Verifique o console.`, true);
+                resultsContainer.classList.add('hidden');
+            } finally {
+                searchEditaisButton.disabled = false;
+            }
+        });
+
+        downloadCsvButtonTable.addEventListener('click', () => {
+            if (currentPinataUrl) {
+                window.location.href = currentPinataUrl;
+            } else {
+                showStatus('Nenhuma URL de download disponível. Realize uma busca primeiro.', true);
+            }
+        });
+
+        copyDataButton.addEventListener('click', () => {
+            if (currentTableData && currentTableData.length > 0) {
+                const headersForCopy = [
+                    'Ord.', 'Ano Orçamento', 'Natureza', 'Data Cadastro',
+                    'Precatório', 'Status', 'Valor'
+                ];
+                const fieldMappingForCopy = {
+                    'Ord.': 'ordem',
+                    'Ano Orçamento': 'ano_orcamento',
+                    'Natureza': 'natureza',
+                    'Data Cadastro': 'data_cadastro',
+                    'Precatório': 'precatorio',
+                    'Status': 'status',
+                    'Valor': 'valor'
+                };
+
+                function formatCurrencyForCopy(value) {
+                    if (value === null || value === undefined || String(value).trim() === '-' || String(value).trim() === '') {
+                        return '-';
+                    }
+                    try {
+                        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+                    } catch (e) {
+                        return String(value);
+                    }
+                }
+
+                const TAB = String.fromCharCode(9);
+                const NEWLINE = String.fromCharCode(10);
+
+                let tsvData = headersForCopy.join(TAB) + NEWLINE;
+                currentTableData.forEach(item => {
+                    const rowValues = headersForCopy.map(header => {
+                        const fieldKey = fieldMappingForCopy[header];
+                        let cellValue = item[fieldKey] !== undefined && item[fieldKey] !== null ? item[fieldKey] : '-';
+
+                        if (fieldKey === 'valor') {
+                            cellValue = formatCurrencyForCopy(cellValue);
+                        }
+                        return String(cellValue).replace(/\r?\n|\r/g, ' ');
+                    });
+                    tsvData += rowValues.join(TAB) + NEWLINE;
+                });
+
+                navigator.clipboard.writeText(tsvData).then(() => {
+                    showCopyFeedback('Dados copiados com sucesso!');
+                }).catch(err => {
+                    console.error('Erro ao copiar dados da tabela: ', err);
+                    showCopyFeedback('Falha ao copiar dados.', true);
+                });
+            } else {
+                showCopyFeedback('Não há dados para copiar.', true);
+            }
+        });
+
+        function showCopyFeedback(message, isError = false) {
+            copyFeedbackToast.textContent = message;
+            copyFeedbackToast.className = 'show';
+            if (isError) {
+                copyFeedbackToast.classList.add('error');
+            } else {
+                copyFeedbackToast.classList.remove('error');
+            }
+
+            setTimeout(() => {
+                copyFeedbackToast.className = '';
+            }, 2000);
+        }
+
+        entityDropdownEdital.addEventListener('change', () => {
+            hideMessages();
+            resultsContainer.classList.add('hidden');
+            downloadCsvButtonTable.classList.add('hidden');
+            currentPinataUrl = null;
+            currentTableData = [];
+        });
+
+        // Event listener para o filtro de precatório
+        filterPrecatórioInput.addEventListener('input', () => {
+            const filterValue = filterPrecatórioInput.value.toLowerCase().trim();
+            const tableBody = editaisTable.querySelector('tbody');
+            if (!tableBody) return;
+
+            const rows = tableBody.querySelectorAll('tr');
+            rows.forEach(row => {
+                const precatorioCell = row.cells[4]; // Coluna PRECATÓRIO (índice 4)
+                if (precatorioCell) {
+                    const cellText = precatorioCell.textContent || precatorioCell.innerText;
+                    if (cellText.toLowerCase().includes(filterValue)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                }
+            });
+        });
+
+        window.onload = populateEntities;
+    </script>
 </body>
 </html>

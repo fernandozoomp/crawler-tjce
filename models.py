@@ -270,6 +270,25 @@ class HealthCheckResponse(BaseModel):
         use_enum_values = True
 
 
+class Edital(BaseModel):
+    ordem: int = Field(..., ge=0)
+    ano_orcamento: int
+    natureza: str = Field(default="-")
+    data_cadastro: str = Field(default="-")
+    precatorio: str = Field(default="-")
+    status: str = Field(default="-")
+    valor: Decimal = Field(default=Decimal("0.0"))
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat() if dt else None,
+            date: lambda d: d.isoformat() if d else None,
+            Decimal: lambda dec: float(dec) if dec is not None else None,
+        }
+        populate_by_name = True
+        use_enum_values = True
+
+
 class FetchPrecatoriosQuery(BaseModel):
     entity: str = Field(
         ...,

@@ -19,6 +19,7 @@ import requests
 
 from crawler import PrecatoriosCrawler
 from entity_mapping_crawler import EntityMappingCrawler
+from edital_crawler import EditalCrawler
 from config import config, field_config
 from logger import configure_logging, get_logger
 from models import (
@@ -26,6 +27,7 @@ from models import (
     PrecatorioResponse,
     EntityMapping,
     EntidadeResponse,
+    Edital,
     HealthCheckResponse,
     FetchPrecatoriosQuery,
 )
@@ -87,6 +89,8 @@ def pagamentos():
     return render_template("pagamentos.html")
 
 
+
+
 app.config["JSON_AS_ASCII"] = False  # Permite caracteres UTF-8 no JSON
 app.config["RESTX_JSON"] = {
     "ensure_ascii": False
@@ -120,11 +124,90 @@ api = Api(
     doc="/docs",
 )
 
+# Configuração do cache
+cache = Cache(app)
+
 # Criação do namespace
 ns = api.namespace("api", description="Operações da API de Precatórios do TJCE")
 
-# Configuração do cache
-cache = Cache(app)
+
+# Rota para buscar editais via API
+@ns.route("/editais")
+class Editais(Resource):
+    @cache.cached(timeout=config.cache_timeout_entities)
+    @limiter.limit(config.rate_limit_entities)
+    def get(self):
+        """Lista todos os editais disponíveis e fornece um CSV com os dados via Pinata."""
+        logger.info("Endpoint /editais chamado")
+        output_filename = "editais_tjce.csv"
+        output_dir = os.path.join(os.getcwd(), "data")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, output_filename)
+
+        try:
+            logger.info(f"Buscando editais e salvando em {output_path}")
+            editais_data = edital_crawler.get_and_save_editais(output_path)
+
+            if not editais_data:
+                logger.warning("Nenhum edital encontrado.")
+                return {
+                    "status": "warning",
+                    "message": "Nenhum edital encontrado.",
+                    "data": [],
+                }, 200
+
+            pinata_url = None
+            logger.info(
+                f"Verificando condições para upload no Pinata (Editais): JWT_EXISTS={bool(config.pinata_api_jwt)}, FILE_EXISTS={os.path.exists(output_path)}"
+            )
+            if config.pinata_api_jwt and os.path.exists(output_path):
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                pinata_file_name = f"editais_tjce_{timestamp}.csv"
+                logger.info(
+                    f"Tentando upload de {output_path} para Pinata como {pinata_file_name}"
+                )
+                pinata_url = upload_and_get_pinata_url(
+                    local_file_path=output_path,
+                    file_name_for_pinata=pinata_file_name,
+                    pinata_jwt=config.pinata_api_jwt,
+                    pinata_metadata={"type": "editais"},
+                )
+                if pinata_url:
+                    logger.info(f"Upload para Pinata bem-sucedido: {pinata_url}")
+                else:
+                    logger.warning(
+                        "Falha no upload do arquivo de editais para o Pinata."
+                    )
+
+            # Converter dados para formato serializável
+            serialized_data = []
+            for edital in editais_data:
+                serialized_edital = {
+                    "ordem": edital.get("ordem", 0),
+                    "ano_orcamento": edital.get("ano_orcamento", 0),
+                    "natureza": edital.get("natureza", "-"),
+                    "data_cadastro": edital.get("data_cadastro", "-"),
+                    "precatorio": edital.get("precatorio", "-"),
+                    "status": edital.get("status", "-"),
+                    "valor": float(edital.get("valor", 0.0)),
+                }
+                serialized_data.append(serialized_edital)
+
+            return {
+                "status": "success",
+                "message": "Editais listados com sucesso.",
+                "data": serialized_data,
+                "pinata_url": pinata_url,
+                "num_editais_found": len(editais_data),
+            }, 200
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar editais: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Erro interno: {str(e)}",
+                "data": []
+            }, 500
 
 # Modelo para os argumentos de query da rota /fetch, para documentação e validação
 fetch_precatorios_parser = ns.parser()
@@ -273,8 +356,9 @@ precatorio_response_model_fields = api.model(
     },
 )
 
-# Instância do crawler
+# Instâncias dos crawlers
 crawler = PrecatoriosCrawler()
+edital_crawler = EditalCrawler()
 
 
 def apply_filters(rows: List[Dict[str, Any]], **filters) -> List[Dict[str, Any]]:

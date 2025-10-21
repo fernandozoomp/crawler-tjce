@@ -1,49 +1,90 @@
 #!/usr/bin/env python3
-import requests
-import os
 import csv
 import json
-from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta
+import os
+from typing import Dict, List, Optional, Union, Any, Tuple
+import locale
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from tenacity import retry, stop_after_attempt, wait_exponential
+import re
+from copy import deepcopy
+from io import StringIO
+from decimal import Decimal, InvalidOperation
+import urllib.parse
+
+import requests
+from pydantic import ValidationError
+
+from config import (
+    config,
+    field_config,
+)
 from logger import get_logger
-from config import config
-from datetime import datetime
+from models import Edital
+from metrics import REQUESTS_TOTAL, RECORDS_PROCESSED, track_time
 
 logger = get_logger(__name__)
+
+# Tenta configurar o locale
+try:
+    locale.setlocale(locale.LC_ALL, "pt_BR.UTF-8")
+    LOCALE_OK = True
+except locale.Error:
+    logger.warning(
+        "locale_error",
+        message="Não foi possível configurar o locale pt_BR.UTF-8, usando formatação manual",
+    )
+    LOCALE_OK = False
+
+
+def format_currency(value: float) -> str:
+    """Formata valor monetário manualmente se o locale não estiver disponível."""
+    if LOCALE_OK:
+        return locale.currency(value, grouping=True, symbol=True)
+
+    # Formatação manual
+    value_str = f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {value_str}"
 
 
 class EditalCrawler:
     def __init__(self):
-        self.api_url = config.api_url
-        self.headers = config.headers
+        self.config_instance = config
+        self.api_url = self.config_instance.api_url
+        self.resource_key = "eacd5a09-9f5f-4e8a-969c-162c1c10d400"  # Resource key específico para editais
+        self.headers = self._get_edital_headers()
         self.session = requests.Session()
         self.session.headers.update(self.headers)
         self.page_size = getattr(config, "edital_page_size", 500)
         self.max_pages = getattr(config, "max_edital_pages", 100)
 
-    def _build_edital_payload(
-        self, last_processo: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Constrói o payload para a requisição de editais, com suporte à paginação."""
-        query_binding: Dict[str, Any] = {
-            "Primary": {"Groupings": [{"Projections": [0]}]},
-            "DataReduction": {
-                "DataVolume": 3,
-                "Primary": {
-                    "Window": {}
-                },
-            },
-            "IncludeEmptyGroups": True,
-            "Version": 1,
+    def _get_edital_headers(self) -> Dict[str, str]:
+        """Retorna headers específicos para a API de editais."""
+        return {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+            "ActivityId": str(uuid.uuid4()),
+            "Connection": "keep-alive",
+            "Content-Type": "application/json;charset=UTF-8",
+            "Origin": "https://app.powerbi.com",
+            "Referer": "https://app.powerbi.com/",
+            "RequestId": str(uuid.uuid4()),
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "cross-site",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36",
+            "X-PowerBI-ResourceKey": self.resource_key,
+            "sec-ch-ua": '"Google Chrome";v="141", "Not_A_Brand";v="8", "Chromium";v="141"',
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": '"Android"',
         }
 
-        # Adiciona RestartTokens se last_processo for fornecido
-        if last_processo:
-            formatted_token = f"'{last_processo}'"
-            query_binding["DataReduction"]["Primary"]["Window"]["RestartTokens"] = [
-                [formatted_token]
-            ]
-            logger.debug(f"Construindo payload com RestartToken: {formatted_token}")
-
+    def _build_edital_payload(
+        self, restart_tokens: Optional[List[Any]] = None, count: int = 500
+    ) -> Dict[str, Any]:
+        """Constrói o payload para a requisição de editais."""
         payload = {
             "version": "1.0.0",
             "queries": [
@@ -57,7 +98,7 @@ class EditalCrawler:
                                         "From": [
                                             {
                                                 "Name": "e",
-                                                "Entity": "EDITAIS_PUBLICADOS",
+                                                "Entity": "Estado_Acordo_Edital_01_2024",
                                                 "Type": 0,
                                             }
                                         ],
@@ -67,212 +108,496 @@ class EditalCrawler:
                                                     "Expression": {
                                                         "SourceRef": {"Source": "e"}
                                                     },
-                                                    "Property": "NUMERO_PROCESSO",
+                                                    "Property": "Ordem",
                                                 },
-                                                "Name": "EDITAIS_PUBLICADOS.NUMERO_PROCESSO",
+                                                "Name": "Sum(Estado_Acordo_Edital_01_2024.Ordem)",
                                             },
                                             {
                                                 "Column": {
                                                     "Expression": {
                                                         "SourceRef": {"Source": "e"}
                                                     },
-                                                    "Property": "TIPO_EDITAL",
+                                                    "Property": "Ano Orçamento",
                                                 },
-                                                "Name": "EDITAIS_PUBLICADOS.TIPO_EDITAL",
+                                                "Name": "Sum(Estado_Acordo_Edital_01_2024.Ano Orçamento)",
                                             },
                                             {
                                                 "Column": {
                                                     "Expression": {
                                                         "SourceRef": {"Source": "e"}
                                                     },
-                                                    "Property": "DATA_PUBLICACAO",
+                                                    "Property": "Natureza do Crédito",
                                                 },
-                                                "Name": "EDITAIS_PUBLICADOS.DATA_PUBLICACAO",
+                                                "Name": "Estado_Acordo_Edital_01_2024.Natureza do Crédito",
                                             },
                                             {
                                                 "Column": {
                                                     "Expression": {
                                                         "SourceRef": {"Source": "e"}
                                                     },
-                                                    "Property": "OBJETO",
+                                                    "Property": "Data de Cadastro",
                                                 },
-                                                "Name": "EDITAIS_PUBLICADOS.OBJETO",
+                                                "Name": "Estado_Acordo_Edital_01_2024.Data de Cadastro",
                                             },
                                             {
                                                 "Column": {
                                                     "Expression": {
                                                         "SourceRef": {"Source": "e"}
                                                     },
-                                                    "Property": "ENTIDADE",
+                                                    "Property": "Precatório",
                                                 },
-                                                "Name": "EDITAIS_PUBLICADOS.ENTIDADE",
+                                                "Name": "Estado_Acordo_Edital_01_2024.Precatório",
                                             },
                                             {
                                                 "Column": {
                                                     "Expression": {
                                                         "SourceRef": {"Source": "e"}
                                                     },
-                                                    "Property": "VALOR_ESTIMADO",
+                                                    "Property": "STATUS",
                                                 },
-                                                "Name": "EDITAIS_PUBLICADOS.VALOR_ESTIMADO",
+                                                "Name": "Estado_Acordo_Edital_01_2024.STATUS",
                                             },
                                             {
                                                 "Column": {
                                                     "Expression": {
                                                         "SourceRef": {"Source": "e"}
                                                     },
-                                                    "Property": "SITUACAO",
+                                                    "Property": "Valor",
                                                 },
-                                                "Name": "EDITAIS_PUBLICADOS.SITUACAO",
+                                                "Name": "Sum(Estado_Acordo_Edital_01_2024.Valor)",
                                             },
+                                        ],
+                                        "Where": [
+                                            {
+                                                "Condition": {
+                                                    "In": {
+                                                        "Expressions": [
+                                                            {
+                                                                "Column": {
+                                                                    "Expression": {
+                                                                        "SourceRef": {"Source": "e"}
+                                                                    },
+                                                                    "Property": "Natureza do Crédito",
+                                                                }
+                                                            }
+                                                        ],
+                                                        "Values": [
+                                                            [{"Literal": {"Value": "'ALIMENTAR'"}}],
+                                                            [{"Literal": {"Value": "'COMUM'"}}],
+                                                        ],
+                                                    }
+                                                }
+                                            }
                                         ],
                                         "OrderBy": [
                                             {
-                                                "Direction": 1,
+                                                "Direction": 2,
                                                 "Expression": {
                                                     "Column": {
                                                         "Expression": {
                                                             "SourceRef": {"Source": "e"}
                                                         },
-                                                        "Property": "DATA_PUBLICACAO",
+                                                        "Property": "Ordem",
                                                     }
                                                 },
                                             }
                                         ],
                                     },
-                                    "Binding": query_binding,
+                                    "Binding": {
+                                        "Primary": {
+                                            "Groupings": [
+                                                {
+                                                    "Projections": [0, 1, 2, 3, 4, 5, 6],
+                                                    "Subtotal": 1,
+                                                }
+                                            ]
+                                        },
+                                        "DataReduction": {
+                                            "DataVolume": 3,
+                                            "Primary": {
+                                                "Window": {"Count": count}
+                                            },
+                                        },
+                                        "Version": 1,
+                                    },
+                                    "ExecutionMetricsKind": 1,
                                 }
                             }
                         ],
                         "QueryId": "",
+                        "ApplicationContext": {
+                            "DatasetId": "0d15eee8-5bba-4eac-8c01-1cc0a16a219c",
+                            "Sources": [
+                                {
+                                    "ReportId": "3416d4a7-1933-4330-b39e-593a3cc3ded5",
+                                    "VisualId": "e33104f1258f2f721448",
+                                }
+                            ],
+                        },
                     }
                 }
             ],
             "cancelQueries": [],
-            "modelId": getattr(config, "edital_model_id", 4287487),
+            "modelId": 5903288,
         }
+
+        # Adiciona RestartTokens se fornecidos
+        if restart_tokens:
+            payload["queries"][0]["Query"]["Commands"][0]["SemanticQueryDataShapeCommand"]["Binding"]["DataReduction"]["Primary"]["Window"]["RestartTokens"] = restart_tokens
+
         return payload
 
-    def _parse_editais_from_data(self, data: Dict[str, Any]) -> List[str]:
-        """Extrai dados de editais da resposta JSON da API."""
-        editais_in_page: List[Dict[str, Any]] = []
-        try:
-            result_data = data["results"][0]["result"]["data"]
-            dsr = result_data.get("dsr", {})
-            ds_list = dsr.get("DS", [])
-
-            for ds_item in ds_list:
-                if "PH" not in ds_item:
-                    continue
-                for ph_item in ds_item["PH"]:
-                    if "DM0" not in ph_item:
-                        continue
-                    for dm0_item in ph_item["DM0"]:
-                        # Cada item DM0 representa um edital
-                        processo = dm0_item.get("C", [""])[0] if "C" in dm0_item and dm0_item["C"] else ""
-
-                        if processo and processo.strip():
-                            edital_data = {
-                                "numero_processo": processo.strip(),
-                                "tipo_edital": "",
-                                "data_publicacao": "",
-                                "objeto": "",
-                                "entidade": "",
-                                "valor_estimado": "",
-                                "situacao": ""
+    def _build_timestamp_payload(self) -> Dict[str, Any]:
+        """Constrói o payload para obter a data de atualização mais recente."""
+        return {
+            "version": "1.0.0",
+            "queries": [
+                {
+                    "Query": {
+                        "Commands": [
+                            {
+                                "SemanticQueryDataShapeCommand": {
+                                    "Query": {
+                                        "Version": 2,
+                                        "From": [
+                                            {
+                                                "Name": "e",
+                                                "Entity": "Estado_Acordo_Edital_01_2024",
+                                                "Type": 0,
+                                            }
+                                        ],
+                                        "Select": [
+                                            {
+                                                "Aggregation": {
+                                                    "Expression": {
+                                                        "Column": {
+                                                            "Expression": {
+                                                                "SourceRef": {"Source": "e"}
+                                                            },
+                                                            "Property": "Atualização do Painel",
+                                                        }
+                                                    },
+                                                    "Function": 3,  # Min function
+                                                },
+                                                "Name": "Min(Estado_Acordo_Edital_01_2024.Atualização do Painel)",
+                                            }
+                                        ],
+                                    },
+                                    "Binding": {
+                                        "Primary": {"Groupings": [{"Projections": [0]}]},
+                                        "DataReduction": {
+                                            "DataVolume": 3,
+                                            "Primary": {"Top": {}},
+                                        },
+                                        "Version": 1,
+                                    },
+                                    "ExecutionMetricsKind": 1,
+                                }
                             }
-                            editais_in_page.append(edital_data)
+                        ],
+                        "QueryId": "",
+                        "ApplicationContext": {
+                            "DatasetId": "0d15eee8-5bba-4eac-8c01-1cc0a16a219c",
+                            "Sources": [
+                                {
+                                    "ReportId": "3416d4a7-1933-4330-b39e-593a3cc3ded5",
+                                    "VisualId": "12b898ee620157903dee",
+                                }
+                            ],
+                        },
+                    }
+                }
+            ],
+            "cancelQueries": [],
+            "modelId": 5903288,
+        }
 
-        except (IndexError, KeyError, TypeError) as e:
-            logger.warning(
-                f"Estrutura inesperada nos dados da API ao parsear editais: {e}",
-                exc_info=True,
-                response_data=data,
-            )
-            return []
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10)
+    )
+    @track_time
+    def _fetch_page(
+        self,
+        restart_tokens: Optional[List[Any]] = None,
+        count: int = 500,
+    ) -> Dict:
+        """Busca uma página de dados da API de editais."""
+        current_headers = self.session.headers.copy()
+        current_headers.update(
+            {"ActivityId": str(uuid.uuid4()), "RequestId": str(uuid.uuid4())}
+        )
 
-        return editais_in_page
+        payload = self._build_edital_payload(restart_tokens=restart_tokens, count=count)
+
+        REQUESTS_TOTAL.labels(entity="edital").inc()
+        response = self.session.post(
+            self.api_url, json=payload, headers=current_headers, timeout=180
+        )
+        response.raise_for_status()
+        return response.json()
 
     def fetch_editais(self) -> List[Dict[str, Any]]:
         """Busca a lista de todos os editais disponíveis, lidando com paginação."""
         all_editais = []
-        last_processo: Optional[str] = None
-        page_count = 0
+        current_restart_tokens: Optional[List[Any]] = None
+        page_num = 0
+
+        logger.info("Iniciando busca de editais")
 
         while True:
-            page_count += 1
+            page_num += 1
             logger.info(
-                f"Buscando página {page_count} de editais. Último processo: {last_processo or 'Nenhum'}"
+                f"Buscando página {page_num} de editais. Tokens: {current_restart_tokens is not None}"
             )
 
-            payload = self._build_edital_payload(last_processo)
-
             try:
-                response = self.session.post(self.api_url, json=payload, timeout=60)
-                response.raise_for_status()
-                data = response.json()
-            except requests.exceptions.Timeout:
-                logger.error(
-                    f"Timeout ao buscar página {page_count} de editais.",
-                    exc_info=True,
+                page_data_response = self._fetch_page(
+                    restart_tokens=current_restart_tokens,
+                    count=self.page_size,
                 )
-                break
+
+                if (
+                    not page_data_response
+                    or "results" not in page_data_response
+                    or not page_data_response["results"]
+                ):
+                    logger.warning(f"Página {page_num}: Resposta vazia ou inválida")
+                    break
+
+                # Normaliza os dados da página
+                normalized_page_rows = self.normalize_edital_data([page_data_response])
+
+                if not normalized_page_rows:
+                    logger.info(f"Página {page_num}: Sem dados normalizados")
+                    break
+
+                all_editais.extend(normalized_page_rows)
+
+                # Verifica se há mais páginas
+                try:
+                    new_restart_tokens = page_data_response["results"][0]["result"][
+                        "data"
+                    ]["dsr"]["DS"][0].get("RT")
+                    if new_restart_tokens:
+                        if new_restart_tokens == current_restart_tokens:
+                            logger.warning(f"Página {page_num}: Tokens duplicados, interrompendo")
+                            break
+                        current_restart_tokens = new_restart_tokens
+                        logger.debug(f"Página {page_num}: Próximos tokens obtidos")
+                    else:
+                        logger.info(f"Página {page_num}: Fim da paginação")
+                        break
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.warning(f"Página {page_num}: Erro ao extrair tokens: {e}")
+                    break
+
             except requests.exceptions.RequestException as e:
-                logger.error(
-                    f"Erro HTTP ({e.response.status_code if e.response else 'N/A'}) na pág. {page_count}: {e}"
-                )
-                if e.response is not None:
-                    logger.debug(
-                        f"Detalhes do erro da API: {e.response.text}",
-                        response_content=e.response.text,
-                    )
+                logger.error(f"Página {page_num}: Erro HTTP: {e}")
                 break
             except Exception as e:
-                logger.error(
-                    f"Erro inesperado ao buscar página {page_count} de editais: {e}",
-                    exc_info=True,
-                )
+                logger.error(f"Página {page_num}: Erro inesperado: {e}")
                 break
 
-            editais_in_page = self._parse_editais_from_data(data)
-
-            if not editais_in_page:
-                logger.info(
-                    f"Nenhum edital retornado na página {page_count}. Fim da paginação."
-                )
+            if page_num >= self.max_pages:
+                logger.warning(f"Limite de páginas ({self.max_pages}) atingido")
                 break
 
-            all_editais.extend(editais_in_page)
-
-            # Verifica se há mais páginas
-            try:
-                dsr = data["results"][0]["result"]["data"]["dsr"]
-                restart_tokens = dsr.get("RT")
-                if restart_tokens:
-                    # O último processo será usado como token para a próxima página
-                    last_processo = editais_in_page[-1]["numero_processo"] if editais_in_page else None
-                    logger.info(
-                        f"Página {page_count}: {len(editais_in_page)} editais recebidos. Próxima página com token: {last_processo}"
-                    )
-                else:
-                    logger.info(
-                        f"Fim da paginação na página {page_count}: Não há RestartTokens."
-                    )
-                    break
-            except (KeyError, IndexError):
-                logger.warning(f"Não foi possível determinar se há mais páginas na página {page_count}")
-                break
-
-            if page_count >= self.max_pages:
-                logger.warning(
-                    f"Atingido o limite de {self.max_pages} páginas. Interrompendo."
-                )
-                break
-
-        logger.info(
-            f"Busca de editais concluída. Total de {len(all_editais)} editais encontrados em {page_count} página(s)."
-        )
+        logger.info(f"Busca concluída: {len(all_editais)} editais em {page_num} páginas")
         return all_editais
+
+    def normalize_edital_data(self, resp_json_pages: List[Dict]) -> List[Dict[str, Any]]:
+        """Normaliza os dados JSON da API de editais para uma lista de dicionários."""
+        normalized_rows: List[Dict] = []
+
+        if not resp_json_pages or not isinstance(resp_json_pages, list):
+            return normalized_rows
+
+        for page_index, resp_json in enumerate(resp_json_pages):
+            try:
+                data = (
+                    resp_json.get("results", [{}])[0].get("result", {}).get("data", {})
+                )
+                if not data:
+                    continue
+
+                dsr = data.get("dsr")
+                if not dsr:
+                    continue
+
+                current_ds_list = dsr.get("DS", [])
+                if not current_ds_list:
+                    continue
+
+                current_ds = current_ds_list[0]
+                value_dicts = current_ds.get("ValueDicts", {})
+
+                ph_list = current_ds.get("PH", [])
+                if not ph_list:
+                    continue
+                ph = ph_list[0]
+
+                data_rows_container = ph.get("DM0")
+                if data_rows_container is None:
+                    continue
+
+                if (
+                    isinstance(data_rows_container, list)
+                    and len(data_rows_container) == 1
+                    and not data_rows_container[0]
+                ):
+                    continue
+
+                global_descriptor_selects = data.get("descriptor", {}).get("Select", [])
+
+                # Mapeamento dos campos
+                field_mapping = {
+                    0: {"name": "ordem", "type": "int", "dict": None},
+                    1: {"name": "ano_orcamento", "type": "int", "dict": "D0"},
+                    2: {"name": "natureza", "type": "str", "dict": "D1"},
+                    3: {"name": "data_cadastro", "type": "date", "dict": "D2"},
+                    4: {"name": "precatorio", "type": "str", "dict": "D3"},
+                    5: {"name": "status", "type": "str", "dict": "D4"},
+                    6: {"name": "valor", "type": "Decimal", "dict": None},
+                }
+
+                data_rows = (
+                    data_rows_container if isinstance(data_rows_container, list) else []
+                )
+
+                for i, raw_row_data_container in enumerate(data_rows):
+                    row_dict = {}
+
+                    # Inicializa com valores padrão
+                    for field_info in field_mapping.values():
+                        if field_info["type"] in ["int", "float", "Decimal"]:
+                            row_dict[field_info["name"]] = 0
+                        else:
+                            row_dict[field_info["name"]] = "-"
+
+                    current_c_values = raw_row_data_container.get("C", [])
+
+                    if i == 0:  # Linha base
+                        if len(current_c_values) != len(field_mapping):
+                            logger.warning(f"Linha base: Tamanho C ({len(current_c_values)}) != campos ({len(field_mapping)})")
+                            continue
+
+                        for col_idx, field_info in field_mapping.items():
+                            if col_idx >= len(current_c_values):
+                                continue
+
+                            raw_value = current_c_values[col_idx]
+                            field_name = field_info["name"]
+                            field_type = field_info["type"]
+                            dict_name = field_info["dict"]
+
+                            if dict_name and dict_name in value_dicts:
+                                try:
+                                    dict_idx = int(raw_value)
+                                    if 0 <= dict_idx < len(value_dicts[dict_name]):
+                                        dict_value = value_dicts[dict_name][dict_idx]
+                                        row_dict[field_name] = self._format_edital_value(
+                                            dict_value, field_type
+                                        )
+                                    else:
+                                        row_dict[field_name] = self._format_edital_value(
+                                            field_info.get("default", "-"), field_type
+                                        )
+                                except (ValueError, TypeError):
+                                    row_dict[field_name] = self._format_edital_value(
+                                        field_info.get("default", "-"), field_type
+                                    )
+                            else:
+                                row_dict[field_name] = self._format_edital_value(
+                                    raw_value, field_type
+                                )
+
+                    else:  # Linhas delta (aplicam Rulifier)
+                        rulifier_r = raw_row_data_container.get("R", 0)
+                        c_delta_values = raw_row_data_container.get("C", [])
+
+                        for col_idx, field_info in field_mapping.items():
+                            field_name = field_info["name"]
+
+                            # Verifica se o bit está setado para novo valor
+                            if not (rulifier_r & (1 << col_idx)):
+                                # Usa valor da linha anterior ou default
+                                row_dict[field_name] = "-"
+                            else:
+                                # Usa novo valor de C_delta
+                                c_idx = 0
+                                for c_col_idx in range(len(field_mapping)):
+                                    if c_col_idx >= len(c_delta_values):
+                                        break
+                                    if (rulifier_r & (1 << c_col_idx)):
+                                        if c_col_idx == col_idx:
+                                            raw_value = c_delta_values[c_idx]
+                                            dict_name = field_info["dict"]
+
+                                            if dict_name and dict_name in value_dicts:
+                                                try:
+                                                    dict_idx = int(raw_value)
+                                                    if 0 <= dict_idx < len(value_dicts[dict_name]):
+                                                        dict_value = value_dicts[dict_name][dict_idx]
+                                                        row_dict[field_name] = self._format_edital_value(
+                                                            dict_value, field_type
+                                                        )
+                                                    else:
+                                                        row_dict[field_name] = self._format_edital_value(
+                                                            field_info.get("default", "-"), field_type
+                                                        )
+                                                except (ValueError, TypeError):
+                                                    row_dict[field_name] = self._format_edital_value(
+                                                        field_info.get("default", "-"), field_type
+                                                    )
+                                            else:
+                                                row_dict[field_name] = self._format_edital_value(
+                                                    raw_value, field_type
+                                                )
+                                            break
+                                        c_idx += 1
+
+                    # Valida e adiciona à lista
+                    try:
+                        edital_obj = Edital(**row_dict)
+                        normalized_rows.append(edital_obj.dict())
+                    except ValidationError as e:
+                        logger.error(f"Erro de validação na linha {i}: {e}")
+
+            except Exception as e:
+                logger.error(f"Erro ao processar página {page_index}: {e}")
+
+        return normalized_rows
+
+    def _format_edital_value(self, value: Any, field_type: str) -> Any:
+        """Formata valor de acordo com o tipo do campo."""
+        if value is None or (isinstance(value, str) and not value.strip()):
+            if field_type in ["int", "float", "Decimal"]:
+                return 0
+            return "-"
+
+        try:
+            if field_type == "int":
+                return int(float(value))
+            elif field_type == "float":
+                return float(value)
+            elif field_type == "Decimal":
+                return Decimal(str(value))
+            elif field_type == "date":
+                # Tenta converter timestamp
+                try:
+                    ts = float(value)
+                    if ts > 100000000000:  # Milissegundos
+                        return datetime.fromtimestamp(ts / 1000).strftime("%d/%m/%Y")
+                    else:  # Segundos
+                        return datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
+                except (ValueError, TypeError):
+                    return str(value)
+            else:
+                return str(value).strip()
+        except (ValueError, TypeError, InvalidOperation):
+            if field_type in ["int", "float", "Decimal"]:
+                return 0
+            return "-"
 
     def save_editais(self, editais: List[Dict[str, Any]], out_file: str) -> None:
         """Salva a lista de editais em um arquivo CSV."""
@@ -281,42 +606,53 @@ class EditalCrawler:
 
             with open(out_file, "w", newline="", encoding="utf-8-sig") as f:
                 if editais:
-                    fieldnames = editais[0].keys()
+                    fieldnames = [
+                        "ordem", "ano_orcamento", "natureza", "data_cadastro",
+                        "precatorio", "status", "valor"
+                    ]
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
-                    writer.writerows(editais)
+
+                    for edital in editais:
+                        # Formatar dados para CSV
+                        csv_row = {}
+                        for field in fieldnames:
+                            value = edital.get(field, "-")
+                            if field == "data_cadastro" and isinstance(value, str):
+                                # Já está formatado como dd/mm/yyyy
+                                csv_row[field] = value
+                            elif field == "valor" and isinstance(value, Decimal):
+                                csv_row[field] = format_currency(float(value))
+                            else:
+                                csv_row[field] = str(value) if value != "-" else ""
+
+                        writer.writerow(csv_row)
                 else:
-                    # Escreve cabeçalhos mesmo se não houver dados
+                    # Cabeçalhos mesmo se vazio
                     writer = csv.writer(f)
                     writer.writerow([
-                        "numero_processo", "tipo_edital", "data_publicacao",
-                        "objeto", "entidade", "valor_estimado", "situacao"
+                        "ordem", "ano_orcamento", "natureza", "data_cadastro",
+                        "precatorio", "status", "valor"
                     ])
 
-            logger.info(f"Lista de editais salva em {out_file}", count=len(editais))
+            logger.info(f"Editais salvos em {out_file}", count=len(editais))
 
         except IOError as e:
-            logger.error(
-                f"Erro de I/O ao salvar editais em {out_file}: {e}", exc_info=True
-            )
+            logger.error(f"Erro de I/O ao salvar editais: {e}")
         except Exception as e:
-            logger.error(f"Erro inesperado ao salvar editais: {e}", exc_info=True)
+            logger.error(f"Erro inesperado ao salvar editais: {e}")
 
     def get_and_save_editais(self, out_file: str) -> List[Dict[str, Any]]:
         """Orquestra busca e salvamento de editais."""
-        logger.info(f"Iniciando get_and_save_editais, output para: {out_file}")
+        logger.info(f"Iniciando coleta de editais para: {out_file}")
 
         editais = self.fetch_editais()
         if not editais:
-            logger.warning(
-                "Nenhum edital foi buscado. O arquivo de saída pode ficar vazio."
-            )
+            logger.warning("Nenhum edital encontrado")
             self.save_editais([], out_file)
             return []
 
         self.save_editais(editais, out_file)
+        logger.info(f"{len(editais)} editais processados")
 
-        logger.info(
-            f"{len(editais)} editais processados e salvos."
-        )
         return editais
