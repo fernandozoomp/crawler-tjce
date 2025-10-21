@@ -447,28 +447,53 @@ class EditalCrawler:
                 ):
                     continue
 
-                global_descriptor_selects = data.get("descriptor", {}).get("Select", [])
-
-                # Mapeamento dos campos
-                field_mapping = {
-                    0: {"name": "ordem", "type": "int", "dict": None},
-                    1: {"name": "ano_orcamento", "type": "int", "dict": "D0"},
-                    2: {"name": "natureza", "type": "str", "dict": "D1"},
-                    3: {"name": "data_cadastro", "type": "date", "dict": "D2"},
-                    4: {"name": "precatorio", "type": "str", "dict": "D3"},
-                    5: {"name": "status", "type": "str", "dict": "D4"},
-                    6: {"name": "valor", "type": "Decimal", "dict": None},
-                }
-
                 data_rows = (
                     data_rows_container if isinstance(data_rows_container, list) else []
                 )
 
+                if not data_rows:
+                    logger.info(f"Página {page_index}: Sem linhas de dados em DM0.")
+                    continue
+
+                # Processar primeira linha para obter schema
+                first_row = data_rows[0]
+                if not isinstance(first_row, dict) or "S" not in first_row or "C" not in first_row:
+                    logger.error(f"Página {page_index}: Primeira linha não tem estrutura esperada (S e C)")
+                    continue
+
+                schema_list = first_row.get("S", [])
+                first_row_c_values = first_row.get("C", [])
+
+                if not schema_list or not first_row_c_values:
+                    logger.error(f"Página {page_index}: Schema ou dados da primeira linha vazios")
+                    continue
+
+                # Mapeamento baseado na estrutura real do response_edital.json
+                field_mapping = []
+                for i, schema_item in enumerate(schema_list):
+                    if i == 0:  # Ordem (índice 0)
+                        field_mapping.append({"name": "ordem", "type": "int", "dict": None, "index": i})
+                    elif i == 1:  # Ano Orçamento (índice 1) - D0
+                        field_mapping.append({"name": "ano_orcamento", "type": "int", "dict": "D0", "index": i})
+                    elif i == 2:  # Natureza (índice 2) - D1
+                        field_mapping.append({"name": "natureza", "type": "str", "dict": "D1", "index": i})
+                    elif i == 3:  # Data Cadastro (índice 3) - D2
+                        field_mapping.append({"name": "data_cadastro", "type": "str", "dict": "D2", "index": i})
+                    elif i == 4:  # Precatório (índice 4) - D3
+                        field_mapping.append({"name": "precatorio", "type": "str", "dict": "D3", "index": i})
+                    elif i == 5:  # Status (índice 5) - D4
+                        field_mapping.append({"name": "status", "type": "str", "dict": "D4", "index": i})
+                    elif i == 6:  # Valor (índice 6)
+                        field_mapping.append({"name": "valor", "type": "Decimal", "dict": None, "index": i})
+
+                logger.info(f"Página {page_index}: Processando {len(data_rows)} linhas com {len(field_mapping)} campos")
+
+                # Processar todas as linhas
                 for i, raw_row_data_container in enumerate(data_rows):
                     row_dict = {}
 
                     # Inicializa com valores padrão
-                    for field_info in field_mapping.values():
+                    for field_info in field_mapping:
                         if field_info["type"] in ["int", "float", "Decimal"]:
                             row_dict[field_info["name"]] = 0
                         else:
@@ -476,13 +501,15 @@ class EditalCrawler:
 
                     current_c_values = raw_row_data_container.get("C", [])
 
-                    if i == 0:  # Linha base
+                    if i == 0:  # Primeira linha (linha base)
                         if len(current_c_values) != len(field_mapping):
-                            logger.warning(f"Linha base: Tamanho C ({len(current_c_values)}) != campos ({len(field_mapping)})")
+                            logger.warning(f"Linha {i}: Tamanho C ({len(current_c_values)}) != campos ({len(field_mapping)})")
                             continue
 
-                        for col_idx, field_info in field_mapping.items():
+                        for field_info in field_mapping:
+                            col_idx = field_info["index"]
                             if col_idx >= len(current_c_values):
+                                logger.warning(f"Linha {i} (base): Índice {col_idx} fora do limite para C")
                                 continue
 
                             raw_value = current_c_values[col_idx]
@@ -500,11 +527,11 @@ class EditalCrawler:
                                         )
                                     else:
                                         row_dict[field_name] = self._format_edital_value(
-                                            field_info.get("default", "-"), field_type
+                                            "-", field_type
                                         )
-                                except (ValueError, TypeError):
+                                except (ValueError, TypeError) as e:
                                     row_dict[field_name] = self._format_edital_value(
-                                        field_info.get("default", "-"), field_type
+                                        "-", field_type
                                     )
                             else:
                                 row_dict[field_name] = self._format_edital_value(
@@ -513,86 +540,119 @@ class EditalCrawler:
 
                     else:  # Linhas delta (aplicam Rulifier)
                         rulifier_r = raw_row_data_container.get("R", 0)
-                        c_delta_values = raw_row_data_container.get("C", [])
 
-                        for col_idx, field_info in field_mapping.items():
+                        # Cada linha delta herda todos os valores da linha anterior
+                        # e só sobrescreve os campos indicados pelo rulifier
+                        previous_row_data = normalized_rows[-1] if normalized_rows else {}
+
+                        # Inicializa com os dados da linha anterior
+                        row_dict = previous_row_data.copy()
+
+                        # Para cada campo, verifica se o bit correspondente está setado no rulifier
+                        c_idx = 0  # Índice no array C (só conta campos que têm bits ZERADOS = novo valor)
+                        for field_info in field_mapping:
+                            col_idx = field_info["index"]
                             field_name = field_info["name"]
 
-                            # Verifica se o bit está setado para novo valor
+                            # Verifica se o bit está ZERADO (0 = novo valor, 1 = herdar da linha anterior)
                             if not (rulifier_r & (1 << col_idx)):
-                                # Usa valor da linha anterior ou default
-                                row_dict[field_name] = "-"
-                            else:
-                                # Usa novo valor de C_delta
-                                c_idx = 0
-                                for c_col_idx in range(len(field_mapping)):
-                                    if c_col_idx >= len(c_delta_values):
-                                        break
-                                    if (rulifier_r & (1 << c_col_idx)):
-                                        if c_col_idx == col_idx:
-                                            raw_value = c_delta_values[c_idx]
-                                            dict_name = field_info["dict"]
+                                # Tem novo valor neste campo - pega do array C
+                                if c_idx < len(current_c_values):
+                                    raw_value = current_c_values[c_idx]
+                                    dict_name = field_info["dict"]
 
-                                            if dict_name and dict_name in value_dicts:
-                                                try:
-                                                    dict_idx = int(raw_value)
-                                                    if 0 <= dict_idx < len(value_dicts[dict_name]):
-                                                        dict_value = value_dicts[dict_name][dict_idx]
-                                                        row_dict[field_name] = self._format_edital_value(
-                                                            dict_value, field_type
-                                                        )
-                                                    else:
-                                                        row_dict[field_name] = self._format_edital_value(
-                                                            field_info.get("default", "-"), field_type
-                                                        )
-                                                except (ValueError, TypeError):
-                                                    row_dict[field_name] = self._format_edital_value(
-                                                        field_info.get("default", "-"), field_type
-                                                    )
+                                    if dict_name and dict_name in value_dicts:
+                                        try:
+                                            dict_idx = int(raw_value)
+                                            if 0 <= dict_idx < len(value_dicts[dict_name]):
+                                                dict_value = value_dicts[dict_name][dict_idx]
+                                                row_dict[field_name] = self._format_edital_value(
+                                                    dict_value, field_info["type"]
+                                                )
                                             else:
                                                 row_dict[field_name] = self._format_edital_value(
-                                                    raw_value, field_type
+                                                    "-", field_info["type"]
                                                 )
-                                            break
-                                        c_idx += 1
+                                        except (ValueError, TypeError) as e:
+                                            row_dict[field_name] = self._format_edital_value(
+                                                "-", field_info["type"]
+                                            )
+                                    else:
+                                        row_dict[field_name] = self._format_edital_value(
+                                            raw_value, field_info["type"]
+                                        )
+                                else:
+                                    logger.warning(f"Linha {i}, Campo {field_name}: Índice C ({c_idx}) fora do limite (len={len(current_c_values)})")
+                                    row_dict[field_name] = "-"
+                                c_idx += 1  # Próximo índice no array C
+                            # Se o bit está setado (1), mantém o valor herdado da linha anterior (já está em row_dict)
 
                     # Valida e adiciona à lista
                     try:
-                        edital_obj = Edital(**row_dict)
-                        normalized_rows.append(edital_obj.dict())
+                        # Trata valores especiais
+                        if row_dict.get("data_cadastro") == "-":
+                            row_dict["data_cadastro"] = ""
+
+                        if row_dict.get("valor") == 0:
+                            row_dict["valor"] = Decimal("0.0")
+
+                        # Só define ordem se não veio da API (ordem == 0)
+                        if row_dict.get("ordem") == 0:
+                            row_dict["ordem"] = len(normalized_rows) + 1  # Usa índice sequencial
+
+                        logger.debug(f"Linha {i} processada: {row_dict}")
+                        normalized_rows.append(row_dict)
+
                     except ValidationError as e:
-                        logger.error(f"Erro de validação na linha {i}: {e}")
+                        logger.error(f"Erro de validação na linha {i}: {e}, dados: {row_dict}")
+                    except Exception as e:
+                        logger.error(f"Erro inesperado na linha {i}: {e}, dados: {row_dict}")
 
             except Exception as e:
-                logger.error(f"Erro ao processar página {page_index}: {e}")
+                logger.error(f"Erro ao processar página {page_index}: {e}", exc_info=True)
 
+        logger.info(f"Normalização concluída: {len(normalized_rows)} linhas processadas")
         return normalized_rows
 
     def _format_edital_value(self, value: Any, field_type: str) -> Any:
         """Formata valor de acordo com o tipo do campo."""
-        if value is None or (isinstance(value, str) and not value.strip()):
+        if value is None:
+            if field_type in ["int", "float", "Decimal"]:
+                return 0
+            return "-"
+
+        if isinstance(value, str) and not value.strip():
             if field_type in ["int", "float", "Decimal"]:
                 return 0
             return "-"
 
         try:
             if field_type == "int":
+                # Trata casos especiais como strings vazias ou valores inválidos
+                if isinstance(value, str):
+                    value = value.strip()
+                    if not value or value == "-":
+                        return 0
                 return int(float(value))
             elif field_type == "float":
+                if isinstance(value, str):
+                    value = value.strip()
+                    if not value or value == "-":
+                        return 0.0
                 return float(value)
             elif field_type == "Decimal":
+                if isinstance(value, str):
+                    value = value.strip()
+                    if not value or value == "-":
+                        return Decimal("0.0")
                 return Decimal(str(value))
-            elif field_type == "date":
-                # Tenta converter timestamp
-                try:
-                    ts = float(value)
-                    if ts > 100000000000:  # Milissegundos
-                        return datetime.fromtimestamp(ts / 1000).strftime("%d/%m/%Y")
-                    else:  # Segundos
-                        return datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
-                except (ValueError, TypeError):
-                    return str(value)
+            elif field_type == "str":
+                # Para campos de texto, apenas retorna a string limpa
+                if isinstance(value, str):
+                    return value.strip()
+                return str(value).strip()
             else:
+                # Para outros tipos, converte para string
                 return str(value).strip()
         except (ValueError, TypeError, InvalidOperation):
             if field_type in ["int", "float", "Decimal"]:

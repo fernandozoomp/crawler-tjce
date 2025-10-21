@@ -182,6 +182,19 @@ class Editais(Resource):
             # Converter dados para formato serializável
             serialized_data = []
             for edital in editais_data:
+                # Trata o valor que pode vir como Decimal ou string
+                valor = edital.get("valor", 0.0)
+                if isinstance(valor, str):
+                    if valor == "-" or not valor.strip():
+                        valor = 0.0
+                    else:
+                        try:
+                            valor = float(valor)
+                        except (ValueError, TypeError):
+                            valor = 0.0
+                elif hasattr(valor, '__float__'):
+                    valor = float(valor)
+
                 serialized_edital = {
                     "ordem": edital.get("ordem", 0),
                     "ano_orcamento": edital.get("ano_orcamento", 0),
@@ -189,7 +202,7 @@ class Editais(Resource):
                     "data_cadastro": edital.get("data_cadastro", "-"),
                     "precatorio": edital.get("precatorio", "-"),
                     "status": edital.get("status", "-"),
-                    "valor": float(edital.get("valor", 0.0)),
+                    "valor": valor,
                 }
                 serialized_data.append(serialized_edital)
 

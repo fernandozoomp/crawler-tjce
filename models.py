@@ -274,7 +274,7 @@ class Edital(BaseModel):
     ordem: int = Field(..., ge=0)
     ano_orcamento: int
     natureza: str = Field(default="-")
-    data_cadastro: str = Field(default="-")
+    data_cadastro: str = Field(default="")  # Pode ser string vazia
     precatorio: str = Field(default="-")
     status: str = Field(default="-")
     valor: Decimal = Field(default=Decimal("0.0"))
