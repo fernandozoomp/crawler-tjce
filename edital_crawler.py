@@ -612,6 +612,11 @@ class EditalCrawler:
                 logger.error(f"Erro ao processar página {page_index}: {e}", exc_info=True)
 
         logger.info(f"Normalização concluída: {len(normalized_rows)} linhas processadas")
+
+        # Ordena as linhas por ordem crescente
+        normalized_rows.sort(key=lambda x: x.get("ordem", 0))
+
+        logger.info(f"Dados ordenados por ordem crescente: {len(normalized_rows)} linhas")
         return normalized_rows
 
     def _format_edital_value(self, value: Any, field_type: str) -> Any:
