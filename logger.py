@@ -5,11 +5,31 @@ from typing import Any, Dict
 
 
 def configure_logging():
+    import os
+
+    # Verifica se debug está habilitado via variável de ambiente
+    debug_mode = os.getenv("DEBUG", "false").lower() == "true"
+
+    # Configura logging básico
+    log_level = logging.DEBUG if debug_mode else logging.INFO
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
-        level=logging.DEBUG,
+        level=log_level,
     )
+
+    # Configura filtros para ignorar logs de bibliotecas externas em produção
+    class LibraryFilter(logging.Filter):
+        def filter(self, record):
+            # Filtra logs de bibliotecas que geram muito ruído
+            if record.name.startswith(('boto3', 'urllib3', 'requests', 'werkzeug', 'asyncio', 'charset_normalizer')):
+                return False
+            return True
+
+    # Só aplica filtro se não estiver em modo debug
+    if not debug_mode:
+        root_logger = logging.getLogger()
+        root_logger.addFilter(LibraryFilter())
 
     structlog.configure(
         processors=[
@@ -21,7 +41,7 @@ def configure_logging():
             structlog.processors.UnicodeDecoder(),
             structlog.processors.JSONRenderer(indent=2),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
