@@ -285,11 +285,11 @@
     <a href="/" class="back-button">Voltar</a>
 
     <header class="header">
-        <h1>Consulta de Editais - TJCE</h1>
+        <h1>Editais - TJCE</h1>
     </header>
 
     <div class="container">
-        <h2>📄 Consulta de Editais</h2>
+        <h2>📄 Edital n.º 01-2024</h2>
 
         <!-- Loading indicator -->
         <div id="loading-container" class="loading-container">
@@ -308,7 +308,7 @@
 
             <div class="filter-container">
                 <label for="filter-precatorio-input">Filtrar por Precatório:</label>
-                <input type="text" id="filter-precatorio-input" placeholder="Digite para filtrar...">
+                <input type="text" id="filter-precatorio-input" placeholder="Digite">
             </div>
 
             <div class="results-actions">
@@ -432,7 +432,7 @@
             }
 
             currentTableData = data;
-            resultsTitle.textContent = `Editais: ${entityName} (${data.length})`;
+            resultsTitle.textContent = `Quantidade: ${entityName} (${data.length})`;
 
             // Cabeçalhos da tabela
             const headers = ['ORDEM', 'ANO ORÇAMENTO', 'NATUREZA', 'DATA CADASTRO', 'PRECATÓRIO', 'STATUS', 'VALOR'];
@@ -443,6 +443,7 @@
                 headerRow.appendChild(th);
             });
             tableHead.appendChild(headerRow);
+
 
             // Mapeamento dos nomes de campo
             const fieldMapping = {
