@@ -113,6 +113,27 @@
             display: none;
         }
 
+        /* Estilos para o indicador de loading */
+        .loading-container {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         /* Estilos para a seção de resultados da tabela */
         .results-container {
             margin-top: 30px;
@@ -270,14 +291,11 @@
     <div class="container">
         <h2>📄 Consulta de Editais</h2>
 
-        <div>
-            <label for="entity-dropdown-edital">Selecione a Entidade:</label>
-            <select id="entity-dropdown-edital">
-                <option value="">Carregando entidades...</option>
-            </select>
+        <!-- Loading indicator -->
+        <div id="loading-container" class="loading-container">
+            <div class="loading-spinner"></div>
+            <p>Carregando editais...</p>
         </div>
-
-        <button id="search-editais-button">Buscar</button>
 
         <div id="status-message" class="status-message hidden">
         </div>
@@ -316,10 +334,9 @@
     <div id="copy-feedback-toast"></div>
 
     <script>
-        const entityDropdownEdital = document.getElementById('entity-dropdown-edital');
-        const searchEditaisButton = document.getElementById('search-editais-button');
         const statusMessageDiv = document.getElementById('status-message');
         const errorMessageDiv = document.getElementById('error-message');
+        const loadingContainer = document.getElementById('loading-container');
 
         const resultsContainer = document.getElementById('results-container');
         const resultsTitle = document.getElementById('results-title');
@@ -333,6 +350,9 @@
         let currentTableData = [];
 
         function showStatus(message, isError = false, isSuccessForTable = false) {
+            // Hide loading first
+            loadingContainer.classList.add('hidden');
+
             const divToShow = isError ? errorMessageDiv : statusMessageDiv;
             const divToHide = isError ? statusMessageDiv : errorMessageDiv;
 
@@ -350,39 +370,47 @@
             errorMessageDiv.classList.add('hidden');
         }
 
-        function populateEntities() {
-            // Buscar entidades da API
-            fetch('/api/entities')
-                .then(response => response.json())
-                .then(data => {
-                    entityDropdownEdital.disabled = true;
-                    searchEditaisButton.disabled = true;
+        function showLoading() {
+            loadingContainer.classList.remove('hidden');
+            resultsContainer.classList.add('hidden');
+            hideMessages();
+        }
 
-                    if (data && data.data && data.data.length > 0) {
-                        entityDropdownEdital.innerHTML = '<option value="">Selecione uma entidade</option>';
-                        data.data.forEach(entity => {
-                            const option = document.createElement('option');
-                            option.value = entity.slug;
-                            option.textContent = entity.official_name;
-                            entityDropdownEdital.appendChild(option);
-                        });
-                        hideMessages();
+        function hideLoading() {
+            loadingContainer.classList.add('hidden');
+        }
+
+        async function loadEditais() {
+            showLoading();
+
+            try {
+                const response = await fetch('/api/editais');
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || `Erro HTTP: ${response.status}`);
+                }
+
+                if (result.status === 'success' && result.data && result.data.length > 0) {
+                    displayEditaisTable(result.data, 'TJCE');
+                    showStatus(`Exibindo ${result.data.length} edital(is).`, false, true);
+
+                    if(result.pinata_url) {
+                        currentPinataUrl = result.pinata_url;
+                        downloadCsvButtonTable.classList.remove('hidden');
                     } else {
-                        entityDropdownEdital.innerHTML = '<option value="">Nenhuma entidade disponível</option>';
-                        showStatus('Nenhuma entidade encontrada para carregar no dropdown.', true);
-                        searchEditaisButton.disabled = true;
+                        downloadCsvButtonTable.classList.add('hidden');
                     }
-                    entityDropdownEdital.disabled = false;
-                    if (data && data.data && data.data.length > 0) {
-                        searchEditaisButton.disabled = false;
-                    }
-                })
-                .catch(error => {
-                    console.error('Erro ao carregar entidades:', error);
-                    entityDropdownEdital.innerHTML = '<option value="">Erro ao carregar entidades</option>';
-                    showStatus('Erro ao carregar entidades. Tente novamente.', true);
-                    searchEditaisButton.disabled = true;
-                });
+                } else {
+                    displayEditaisTable([], 'TJCE');
+                    showStatus('Nenhum edital encontrado.');
+                    downloadCsvButtonTable.classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('Erro na requisição para /api/editais:', error);
+                showStatus(`Ocorreu um erro: ${error.message}. Verifique o console.`, true);
+                resultsContainer.classList.add('hidden');
+            }
         }
 
         function displayEditaisTable(data, entityName) {
@@ -454,62 +482,12 @@
             filterPrecatórioInput.value = '';
         }
 
-        searchEditaisButton.addEventListener('click', async () => {
-            const entitySlug = entityDropdownEdital.value;
-            const selectedEntityName = entityDropdownEdital.options[entityDropdownEdital.selectedIndex].text;
-
-            if (!entitySlug) {
-                showStatus('Por favor, selecione uma entidade.', true);
-                resultsContainer.classList.add('hidden');
-                return;
-            }
-
-            showStatus('Buscando editais...');
-            searchEditaisButton.disabled = true;
-            resultsContainer.classList.add('hidden');
-            downloadCsvButtonTable.classList.add('hidden');
-            filterPrecatórioInput.value = '';
-            filterPrecatórioInput.disabled = true;
-            currentPinataUrl = null;
-            currentTableData = [];
-
-            try {
-                const response = await fetch(`/api/editais`);
-                const result = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(result.message || `Erro HTTP: ${response.status}`);
-                }
-
-                if (result.status === 'success' && result.data && result.data.length > 0) {
-                    displayEditaisTable(result.data, selectedEntityName);
-                    showStatus(`Exibindo ${result.data.length} edital(is) para ${selectedEntityName}.`, false, true);
-
-                    if(result.pinata_url) {
-                        currentPinataUrl = result.pinata_url;
-                        downloadCsvButtonTable.classList.remove('hidden');
-                    } else {
-                        downloadCsvButtonTable.classList.add('hidden');
-                    }
-                } else {
-                    displayEditaisTable([], selectedEntityName);
-                    showStatus(`Nenhum edital encontrado para ${selectedEntityName}.`);
-                    downloadCsvButtonTable.classList.add('hidden');
-                }
-            } catch (error) {
-                console.error('Erro na requisição para /api/editais:', error);
-                showStatus(`Ocorreu um erro: ${error.message}. Verifique o console.`, true);
-                resultsContainer.classList.add('hidden');
-            } finally {
-                searchEditaisButton.disabled = false;
-            }
-        });
 
         downloadCsvButtonTable.addEventListener('click', () => {
             if (currentPinataUrl) {
                 window.location.href = currentPinataUrl;
             } else {
-                showStatus('Nenhuma URL de download disponível. Realize uma busca primeiro.', true);
+                showStatus('Nenhuma URL de download disponível.', true);
             }
         });
 
@@ -582,14 +560,6 @@
             }, 2000);
         }
 
-        entityDropdownEdital.addEventListener('change', () => {
-            hideMessages();
-            resultsContainer.classList.add('hidden');
-            downloadCsvButtonTable.classList.add('hidden');
-            currentPinataUrl = null;
-            currentTableData = [];
-        });
-
         // Event listener para o filtro de precatório
         filterPrecatórioInput.addEventListener('input', () => {
             const filterValue = filterPrecatórioInput.value.toLowerCase().trim();
@@ -610,7 +580,10 @@
             });
         });
 
-        window.onload = populateEntities;
+        // Carregar editais automaticamente quando a página carrega
+        window.onload = function() {
+            loadEditais();
+        };
     </script>
 </body>
 </html>
