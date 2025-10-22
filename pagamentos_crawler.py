@@ -460,15 +460,15 @@ class PagamentosCrawler:
 
                 # Processar primeira linha para obter schema
                 first_row = data_rows[0]
-                if not isinstance(first_row, dict) or "S" not in first_row or "C" not in first_row:
-                    logger.error(f"Página {page_index}: Primeira linha não tem estrutura esperada (S e C)")
+                if not isinstance(first_row, dict) or "S" not in first_row:
+                    logger.error(f"Página {page_index}: Primeira linha não tem estrutura esperada (S)")
                     continue
 
                 schema_list = first_row.get("S", [])
-                first_row_c_values = first_row.get("C", [])
 
-                if not schema_list or not first_row_c_values:
-                    logger.error(f"Página {page_index}: Schema ou dados da primeira linha vazios")
+                # Verificar se a primeira linha tem schema
+                if not schema_list:
+                    logger.error(f"Página {page_index}: Schema vazio")
                     continue
 
                 # Mapeamento baseado na estrutura do response_pagamentos.json
@@ -509,9 +509,11 @@ class PagamentosCrawler:
                     elif i == 16:  # Valor Líquido (índice 16)
                         field_mapping.append({"name": "valor_liquido", "type": "Decimal", "dict": None, "index": i})
 
+                # Nota: campo ordem será adicionado separadamente após processamento
+
                 logger.info(f"Página {page_index}: Processando {len(data_rows)} linhas com {len(field_mapping)} campos")
 
-                # Processar todas as linhas
+                # Processar todas as linhas começando da linha 0 (linha base)
                 for i, raw_row_data_container in enumerate(data_rows):
                     row_dict = {}
 
@@ -523,50 +525,48 @@ class PagamentosCrawler:
                             row_dict[field_info["name"]] = "-"
 
                     current_c_values = raw_row_data_container.get("C", [])
+                    rulifier_r = raw_row_data_container.get("R", 0)
 
-                    if i == 0:  # Primeira linha (linha base)
-                        if len(current_c_values) != len(field_mapping):
-                            logger.warning(f"Linha {i}: Tamanho C ({len(current_c_values)}) != campos ({len(field_mapping)})")
-                            continue
-
+                    if i == 0:  # Primeira linha (linha base) - processa todos os campos normalmente
+                        # A linha base tem valores para alguns campos básicos
                         for field_info in field_mapping:
                             col_idx = field_info["index"]
-                            if col_idx >= len(current_c_values):
-                                continue
+                            if col_idx < len(current_c_values):
+                                raw_value = current_c_values[col_idx]
+                                field_name = field_info["name"]
+                                field_type = field_info["type"]
+                                dict_name = field_info["dict"]
 
-                            raw_value = current_c_values[col_idx]
-                            dict_name = field_info["dict"]
-
-                            if dict_name and dict_name in value_dicts:
-                                try:
-                                    dict_idx = int(raw_value)
-                                    if 0 <= dict_idx < len(value_dicts[dict_name]):
-                                        dict_value = value_dicts[dict_name][dict_idx]
-                                        row_dict[field_info["name"]] = self._format_pagamento_value(
-                                            dict_value, field_info["type"]
+                                if dict_name and dict_name in value_dicts:
+                                    try:
+                                        dict_idx = int(raw_value)
+                                        if 0 <= dict_idx < len(value_dicts[dict_name]):
+                                            dict_value = value_dicts[dict_name][dict_idx]
+                                            row_dict[field_name] = self._format_pagamento_value(
+                                                dict_value, field_type
+                                            )
+                                        else:
+                                            row_dict[field_name] = self._format_pagamento_value(
+                                                "-", field_type
+                                            )
+                                    except (ValueError, TypeError) as e:
+                                        row_dict[field_name] = self._format_pagamento_value(
+                                            "-", field_type
                                         )
-                                    else:
-                                        row_dict[field_info["name"]] = self._format_pagamento_value(
-                                            "-", field_info["type"]
-                                        )
-                                except (ValueError, TypeError) as e:
-                                    row_dict[field_info["name"]] = self._format_pagamento_value(
-                                        "-", field_info["type"]
+                                else:
+                                    row_dict[field_name] = self._format_pagamento_value(
+                                        raw_value, field_type
                                     )
-                            else:
-                                row_dict[field_info["name"]] = self._format_pagamento_value(
-                                    raw_value, field_info["type"]
-                                )
+                            # Se não há valor em C para este campo, mantém o valor padrão
 
                     else:  # Linhas delta (aplicam Rulifier)
-                        rulifier_r = raw_row_data_container.get("R", 0)
-
                         # Cada linha delta herda todos os valores da linha anterior
                         # e só sobrescreve os campos indicados pelo rulifier
-                        previous_row_data = normalized_rows[-1] if normalized_rows else {}
-
-                        # Inicializa com os dados da linha anterior
-                        row_dict = previous_row_data.copy()
+                        if normalized_rows:
+                            # Se já temos linhas processadas, herda da última
+                            previous_row_data = normalized_rows[-1]
+                            row_dict = previous_row_data.copy()
+                        # Se é a primeira linha delta, usa os valores padrão inicializados acima
 
                         # Para cada campo, verifica se o bit correspondente está setado no rulifier
                         c_idx = 0  # Índice no array C (só conta campos que têm bits ZERADOS = novo valor)
@@ -623,6 +623,10 @@ class PagamentosCrawler:
                                 row_dict[decimal_field] = Decimal("0.0")
 
                         logger.debug(f"Linha {i} processada: {row_dict}")
+
+                        # Adicionar campo ordem (não vem da API, é calculado)
+                        row_dict["ordem"] = len(normalized_rows) + 1  # Usa índice sequencial
+
                         normalized_rows.append(row_dict)
 
                     except ValidationError as e:
@@ -633,7 +637,10 @@ class PagamentosCrawler:
             except Exception as e:
                 logger.error(f"Erro ao processar página {page_index}: {e}", exc_info=True)
 
-        logger.info(f"Normalização concluída: {len(normalized_rows)} linhas processadas")
+        # Ordena as linhas por ordem crescente
+        normalized_rows.sort(key=lambda x: x.get("ordem", 0))
+
+        logger.info(f"Dados ordenados por ordem crescente: {len(normalized_rows)} linhas")
         return normalized_rows
 
     def _format_pagamento_value(self, value: Any, field_type: str) -> Any:

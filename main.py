@@ -290,6 +290,7 @@ class Pagamentos(Resource):
                     return 0.0
 
                 serialized_pagamento = {
+                    "ordem": pagamento.get("ordem", 0),
                     "quantidade": pagamento.get("quantidade", 0),
                     "modalidade": pagamento.get("modalidade", "-"),
                     "natureza": pagamento.get("natureza", "-"),
@@ -459,6 +460,7 @@ class Pagamentos(Resource):
                     return 0.0
 
                 serialized_pagamento = {
+                    "ordem": pagamento.get("ordem", 0),
                     "quantidade": pagamento.get("quantidade", 0),
                     "modalidade": pagamento.get("modalidade", "-"),
                     "natureza": pagamento.get("natureza", "-"),

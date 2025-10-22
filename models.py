@@ -290,6 +290,7 @@ class Edital(BaseModel):
 
 
 class Pagamento(BaseModel):
+    ordem: int = Field(default=0, ge=0)
     quantidade: int = Field(default=0)
     modalidade: str = Field(default="-")
     natureza: str = Field(default="-")

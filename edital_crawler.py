@@ -518,21 +518,28 @@ class EditalCrawler:
                             dict_name = field_info["dict"]
 
                             if dict_name and dict_name in value_dicts:
-                                try:
-                                    dict_idx = int(raw_value)
-                                    if 0 <= dict_idx < len(value_dicts[dict_name]):
-                                        dict_value = value_dicts[dict_name][dict_idx]
-                                        row_dict[field_name] = self._format_edital_value(
-                                            dict_value, field_type
-                                        )
-                                    else:
+                                # Verifica se o valor é um número de precatório direto
+                                if self._is_precatorio_number(str(raw_value)):
+                                    # Se é um número de precatório, usa diretamente
+                                    row_dict[field_name] = self._format_edital_value(
+                                        raw_value, field_type
+                                    )
+                                else:
+                                    try:
+                                        dict_idx = int(raw_value)
+                                        if 0 <= dict_idx < len(value_dicts[dict_name]):
+                                            dict_value = value_dicts[dict_name][dict_idx]
+                                            row_dict[field_name] = self._format_edital_value(
+                                                dict_value, field_type
+                                            )
+                                        else:
+                                            row_dict[field_name] = self._format_edital_value(
+                                                "-", field_type
+                                            )
+                                    except (ValueError, TypeError) as e:
                                         row_dict[field_name] = self._format_edital_value(
                                             "-", field_type
                                         )
-                                except (ValueError, TypeError) as e:
-                                    row_dict[field_name] = self._format_edital_value(
-                                        "-", field_type
-                                    )
                             else:
                                 row_dict[field_name] = self._format_edital_value(
                                     raw_value, field_type
@@ -562,21 +569,28 @@ class EditalCrawler:
                                     dict_name = field_info["dict"]
 
                                     if dict_name and dict_name in value_dicts:
-                                        try:
-                                            dict_idx = int(raw_value)
-                                            if 0 <= dict_idx < len(value_dicts[dict_name]):
-                                                dict_value = value_dicts[dict_name][dict_idx]
-                                                row_dict[field_name] = self._format_edital_value(
-                                                    dict_value, field_info["type"]
-                                                )
-                                            else:
+                                        # Verifica se o valor é um número de precatório direto
+                                        if self._is_precatorio_number(str(raw_value)):
+                                            # Se é um número de precatório, usa diretamente
+                                            row_dict[field_name] = self._format_edital_value(
+                                                raw_value, field_info["type"]
+                                            )
+                                        else:
+                                            try:
+                                                dict_idx = int(raw_value)
+                                                if 0 <= dict_idx < len(value_dicts[dict_name]):
+                                                    dict_value = value_dicts[dict_name][dict_idx]
+                                                    row_dict[field_name] = self._format_edital_value(
+                                                        dict_value, field_info["type"]
+                                                    )
+                                                else:
+                                                    row_dict[field_name] = self._format_edital_value(
+                                                        "-", field_info["type"]
+                                                    )
+                                            except (ValueError, TypeError) as e:
                                                 row_dict[field_name] = self._format_edital_value(
                                                     "-", field_info["type"]
                                                 )
-                                        except (ValueError, TypeError) as e:
-                                            row_dict[field_name] = self._format_edital_value(
-                                                "-", field_info["type"]
-                                            )
                                     else:
                                         row_dict[field_name] = self._format_edital_value(
                                             raw_value, field_info["type"]
@@ -618,6 +632,15 @@ class EditalCrawler:
 
         logger.info(f"Dados ordenados por ordem crescente: {len(normalized_rows)} linhas")
         return normalized_rows
+
+    def _is_precatorio_number(self, value: str) -> bool:
+        """Verifica se uma string parece um número de precatório."""
+        if not isinstance(value, str):
+            return False
+        # Regex para formato de precatório: 0000000-00.0000.0.00.0000
+        import re
+        pattern = r'^\d{7}-\d{2}\.\d{4}\.\d{1}\.\d{2}\.\d{4}$'
+        return bool(re.match(pattern, value.strip()))
 
     def _format_edital_value(self, value: Any, field_type: str) -> Any:
         """Formata valor de acordo com o tipo do campo."""

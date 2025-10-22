@@ -435,7 +435,7 @@
             resultsTitle.textContent = `Pagamentos: ${entityName} (${data.length})`;
 
             // Cabeçalhos da tabela
-            const headers = ['QTDE', 'MODALIDADE', 'NATUREZA', 'EXERCÍCIO', 'DATA PROTOCOLO', 'PRECATÓRIO', 'CREDOR/BENEFICIÁRIO', 'TIPO', 'DATA PAGAMENTO', 'CPF/CNPJ', 'VALOR BRUTO', 'PREVIDÊNCIA', 'IRRF', 'HONORÁRIOS', 'V. BRUTO CONTRATUAL', 'RRA', 'VALOR LÍQUIDO'];
+            const headers = ['ORDEM', 'QTDE', 'MODALIDADE', 'NATUREZA', 'EXERCÍCIO', 'DATA PROTOCOLO', 'PRECATÓRIO', 'CREDOR/BENEFICIÁRIO', 'TIPO', 'DATA PAGAMENTO', 'CPF/CNPJ', 'VALOR BRUTO', 'PREVIDÊNCIA', 'IRRF', 'HONORÁRIOS', 'V. BRUTO CONTRATUAL', 'RRA', 'VALOR LÍQUIDO'];
             const headerRow = document.createElement('tr');
             headers.forEach(headerText => {
                 const th = document.createElement('th');
@@ -446,6 +446,7 @@
 
             // Mapeamento dos nomes de campo
             const fieldMapping = {
+                'ORDEM': 'ordem',
                 'QTDE': 'quantidade',
                 'MODALIDADE': 'modalidade',
                 'NATUREZA': 'natureza',
@@ -503,12 +504,13 @@
         copyDataButton.addEventListener('click', () => {
             if (currentTableData && currentTableData.length > 0) {
                 const headersForCopy = [
-                    'Qtde', 'Modalidade', 'Natureza', 'Exercício', 'Data Protocolo',
+                    'Ord.', 'Qtde', 'Modalidade', 'Natureza', 'Exercício', 'Data Protocolo',
                     'Precatório', 'Credor/Beneficiário', 'Tipo', 'Data Pagamento',
                     'CPF/CNPJ', 'Valor Bruto', 'Previdência', 'IRRF', 'Honorários',
                     'V. Bruto Contratual', 'RRA', 'Valor Líquido'
                 ];
                 const fieldMappingForCopy = {
+                    'Ord.': 'ordem',
                     'Qtde': 'quantidade',
                     'Modalidade': 'modalidade',
                     'Natureza': 'natureza',
@@ -589,7 +591,7 @@
 
             const rows = tableBody.querySelectorAll('tr');
             rows.forEach(row => {
-                const credorCell = row.cells[6]; // Coluna CREDOR/BENEFICIÁRIO (índice 6)
+                const credorCell = row.cells[7]; // Coluna CREDOR/BENEFICIÁRIO (índice 7, após adicionar ORDEM)
                 if (credorCell) {
                     const cellText = credorCell.textContent || credorCell.innerText;
                     if (cellText.toLowerCase().includes(filterValue)) {

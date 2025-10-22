@@ -350,11 +350,11 @@ PAYLOAD_STRUCTURE = {
             },
             "CacheKey": str(uuid.uuid4()),
             "ApplicationContext": {
-                "DatasetId": "a5921770-b898-442d-9693-d0393d3e7996",
+                "DatasetId": "4c290280-9235-4dd4-a48e-888f14efb2d8",
                 "Sources": [
                     {
-                        "ReportId": "69f1b060-9e50-402e-99c9-5592f8b001c8",
-                        "VisualId": "f6d03712b8e8502833a0",
+                        "ReportId": "e610bea8-b5e1-4bdf-84b5-db63928dfcd9",
+                        "VisualId": "99f187e38dbe0509eab4",
                     }
                 ],
             },
