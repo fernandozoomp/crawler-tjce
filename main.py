@@ -17,13 +17,13 @@ import tempfile
 from datetime import datetime
 import requests
 
-from crawler import PrecatoriosCrawler
-from entity_mapping_crawler import EntityMappingCrawler
-from edital_crawler import EditalCrawler
-from pagamentos_crawler import PagamentosCrawler
+from crawler.crawler import PrecatoriosCrawler
+from schemas.entity_mapping_crawler import EntityMappingCrawler
+from crawler.edital_crawler import EditalCrawler
+from crawler.pagamentos_crawler import PagamentosCrawler
 from config import config, field_config
 from logger import configure_logging, get_logger
-from models import (
+from models.models import (
     Precatorio,
     PrecatorioResponse,
     EntityMapping,
@@ -34,13 +34,13 @@ from models import (
     FetchPrecatoriosQuery,
 )
 from metrics import track_time
-from entity_mapping import (
+from schemas.entity_mapping import (
     get_api_entity_name,
     get_entity_slug,
     validate_entity_slug,
     ENTITY_MAPPING,
 )
-from pinata_uploader import upload_and_get_pinata_url
+from services.pinata_uploader import upload_and_get_pinata_url
 
 # Configuração do logging
 configure_logging()

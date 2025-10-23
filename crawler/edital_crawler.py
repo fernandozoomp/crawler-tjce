@@ -22,7 +22,7 @@ from config import (
     field_config,
 )
 from logger import get_logger
-from models import Edital
+from models.models import Edital
 from metrics import REQUESTS_TOTAL, RECORDS_PROCESSED, track_time
 
 logger = get_logger(__name__)

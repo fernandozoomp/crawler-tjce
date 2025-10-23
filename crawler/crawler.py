@@ -23,9 +23,9 @@ from config import (
     PAYLOAD_STRUCTURE,
 )
 from logger import get_logger
-from models import Precatorio
+from models.models import Precatorio
 from metrics import REQUESTS_TOTAL, RECORDS_PROCESSED, track_time
-from entity_mapping import get_api_entity_name
+from schemas.entity_mapping import get_api_entity_name
 
 logger = get_logger(__name__)
 

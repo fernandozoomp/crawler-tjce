@@ -22,7 +22,7 @@ from config import (
     field_config,
 )
 from logger import get_logger
-from models import Pagamento
+from models.models import Pagamento
 from metrics import REQUESTS_TOTAL, RECORDS_PROCESSED, track_time
 
 logger = get_logger(__name__)
