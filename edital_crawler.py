@@ -518,7 +518,7 @@ class EditalCrawler:
                             dict_name = field_info["dict"]
 
                             if dict_name and dict_name in value_dicts:
-                                # Verifica se o valor é um número de precatório direto
+                                # Verifica se o raw_value é um número de precatório direto
                                 if self._is_precatorio_number(str(raw_value)):
                                     # Se é um número de precatório, usa diretamente
                                     row_dict[field_name] = self._format_edital_value(
@@ -569,7 +569,7 @@ class EditalCrawler:
                                     dict_name = field_info["dict"]
 
                                     if dict_name and dict_name in value_dicts:
-                                        # Verifica se o valor é um número de precatório direto
+                                        # Verifica se o raw_value é um número de precatório direto
                                         if self._is_precatorio_number(str(raw_value)):
                                             # Se é um número de precatório, usa diretamente
                                             row_dict[field_name] = self._format_edital_value(
@@ -633,8 +633,8 @@ class EditalCrawler:
         logger.info(f"Dados ordenados por ordem crescente: {len(normalized_rows)} linhas")
         return normalized_rows
 
-    def _is_precatorio_number(self, value: str) -> bool:
-        """Verifica se uma string parece um número de precatório."""
+    def _is_precatorio_number(self, value: Any) -> bool:
+        """Verifica se um valor parece um número de precatório."""
         if not isinstance(value, str):
             return False
         # Regex para formato de precatório: 0000000-00.0000.0.00.0000
